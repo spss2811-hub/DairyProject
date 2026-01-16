@@ -3,6 +3,9 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const helmet = require('helmet');
+const compression = require('compression');
+const morgan = require('morgan');
 
 dotenv.config();
 
@@ -19,14 +22,28 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 
-app.use(cors());
+// Security & Performance Middleware
+app.use(helmet()); // Sets secure HTTP headers
+app.use(compression()); // Compresses response bodies
+app.use(morgan('combined')); // Logs requests
+
+// CORS Configuration
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || '*', // Restrict to frontend URL in production
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Connect to MongoDB
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected'))
-    .catch(err => console.error('MongoDB Connection Error:', err));
+    .catch(err => {
+      console.error('MongoDB Connection Error:', err);
+      process.exit(1); // Exit if DB fails
+    });
 
 // --- Helper Functions ---
 const getBillPeriodForDate = (dateStr, basePeriods) => {
@@ -511,5 +528,14 @@ app.post('/sales', async (req, res) => res.json(await new Sale({ ...req.body, id
 
 app.get('/transactions', async (req, res) => res.json(await Transaction.find()));
 app.post('/transactions', async (req, res) => res.json(await new Transaction({ ...req.body, id: Date.now().toString() }).save()));
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Internal Server Error', 
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined 
+  });
+});
 
 app.listen(PORT, () => console.log(`Mongo Server running on ${PORT}`));
