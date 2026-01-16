@@ -529,6 +529,38 @@ app.post('/sales', async (req, res) => res.json(await new Sale({ ...req.body, id
 app.get('/transactions', async (req, res) => res.json(await Transaction.find()));
 app.post('/transactions', async (req, res) => res.json(await new Transaction({ ...req.body, id: Date.now().toString() }).save()));
 
+// Dashboard Stats
+app.get('/dashboard-stats', async (req, res) => {
+    try {
+        const collections = await Collection.find();
+        const salesData = await LocalSale.find(); // Using LocalSale as primary sales data based on existing logic
+        const txns = await Transaction.find();
+        
+        const totalMilkCollected = collections.reduce((acc, c) => acc + (parseFloat(c.qty) || 0), 0);
+        const totalPayableToFarmers = collections.reduce((acc, c) => acc + (parseFloat(c.amount) || 0), 0);
+        
+        const totalMilkSold = salesData.reduce((acc, s) => acc + (parseFloat(s.qty) || 0), 0);
+        const totalSalesRevenue = salesData.reduce((acc, s) => acc + (parseFloat(s.amount) || 0), 0);
+        
+        const totalIncome = txns.filter(t => t.type === 'credit').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+        const totalExpense = txns.filter(t => t.type === 'debit').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+        
+        res.json({
+            totalMilkCollected,
+            totalPayableToFarmers,
+            totalMilkSold,
+            totalSalesRevenue,
+            cashBook: {
+                income: totalIncome,
+                expense: totalExpense,
+                balance: totalIncome - totalExpense
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
