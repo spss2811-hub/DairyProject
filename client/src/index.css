@@ -1,0 +1,283 @@
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root { width: 100%; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+}
+
+.main-content {
+  flex-grow: 1;
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+/* --- Modern Sidebar Styles (Light Theme) --- */
+.sidebar-container {
+  background: #ffffff;
+  width: 280px;
+  height: 100vh;
+  box-shadow: 2px 0 15px rgba(0,0,0,0.05);
+  transition: all 0.3s ease;
+  z-index: 1000;
+  position: sticky;
+  top: 0;
+  overflow-x: hidden;
+  border-right: 1px solid #e9ecef;
+  flex-shrink: 0;
+}
+
+.sidebar-container.collapsed { width: 80px; }
+
+.sidebar-logo {
+  font-weight: 800;
+  letter-spacing: 1px;
+  background: linear-gradient(45deg, #007bff 0%, #00d2ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  padding: 1.5rem 1rem;
+  white-space: nowrap;
+  transition: opacity 0.3s;
+}
+
+.collapsed .sidebar-logo { opacity: 0; padding: 1.5rem 0; }
+
+.freeze-toggle {
+  position: absolute;
+  right: 15px;
+  top: 20px;
+  cursor: pointer;
+  color: #6c757d;
+  transition: all 0.3s;
+  z-index: 1001;
+}
+
+.collapsed .freeze-toggle { right: 50%; transform: translateX(50%); }
+
+.nav-section-title {
+  color: #495057;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  padding-left: 1.25rem;
+  white-space: nowrap;
+}
+
+.purchase-billing-title {
+  color: #0056b3 !important;
+  font-weight: 900 !important;
+}
+
+.master-red-title {
+  color: #dc3545 !important;
+  font-weight: 800 !important;
+}
+
+.nav-master-title {
+  color: #212529;
+  font-size: 0.88rem;
+  font-weight: 700;
+  padding: 0.5rem 1.25rem;
+  cursor: default;
+}
+
+.collapsed .nav-section-title,
+.collapsed .nav-master-title,
+.collapsed .nav-link span,
+.collapsed .sidebar-sub-nav,
+.collapsed .sidebar-nested-nav {
+  display: none;
+}
+
+.sidebar-nav .nav-link {
+  color: #343a40;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  border-radius: 0;
+  transition: all 0.2s;
+  border-left: 4px solid transparent;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
+
+.sidebar-nav .nav-link:hover {
+  color: #007bff;
+  background: transparent !important;
+  border-left-color: #007bff;
+}
+
+.sidebar-nav .nav-link.active {
+  color: #007bff;
+  background: transparent !important;
+  border-left-color: #007bff;
+}
+
+.sidebar-sub-nav .nav-link {
+  padding-left: 2.5rem;
+  font-size: 0.88rem;
+  color: #000000 !important; /* Thick Black */
+  font-weight: 800 !important;
+  background: transparent !important; /* Removed background */
+  border-bottom: 1px solid #dee2e6;
+}
+
+.sidebar-nested-nav .nav-link {
+  padding-left: 3.5rem;
+  font-size: 0.85rem;
+  color: #495057;
+  background: transparent !important; /* Removed background */
+  font-weight: 500;
+}
+
+/* SPECIFIC SKY BLUE STYLE FOR FARMER LIST */
+.sidebar-nested-nav .nav-link.sky-blue-text-nav {
+  color: #0099cc !important; 
+  font-weight: 800 !important;
+}
+
+.sidebar-nested-nav .nav-link.saffron-text-nav, .sidebar-sub-nav .nav-link.saffron-text-nav {
+  color: #FF8C00 !important; /* Deep Saffron */
+  font-weight: 800 !important;
+}
+
+.sidebar-nav .nav-link.red-text-nav {
+  color: #ff0000 !important; /* Bright Red */
+  font-weight: 800 !important;
+}
+
+
+.sidebar-sub-nav .nav-link:hover, .sidebar-nested-nav .nav-link:hover {
+  color: #007bff !important;
+  background: transparent !important;
+}
+
+.sidebar-nav svg {
+  width: 1.2rem;
+  margin-right: 0.85rem;
+  color: #6c757d;
+}
+
+.sidebar-nav .active svg { color: #007bff; }
+
+.sidebar-divider {
+  border-top: 1px solid #e9ecef;
+  margin: 1rem 0;
+}
+
+/* --- Print Styles --- */
+@media print {
+  @page {
+    margin: 0.3in !important;
+    size: auto;
+  }
+  * {
+    color: black !important;
+    text-shadow: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  html, body {
+    height: auto;
+    font-size: 9pt !important;
+    background-color: white !important;
+  }
+  .sidebar-container, .d-print-none, hr {
+    display: none !important;
+  }
+  .main-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    background-color: white !important;
+  }
+  .card {
+    border: none !important;
+    box-shadow: none !important;
+    margin-bottom: 0 !important;
+  }
+  .card-body {
+    padding: 0 !important;
+  }
+  .container-fluid {
+    padding: 0 !important;
+  }
+  .text-center-print {
+    text-align: center !important;
+  }
+  .text-end-print {
+    text-align: right !important;
+    padding-right: 5px !important;
+  }
+  .fs-10-print {
+    font-size: 10pt !important;
+  }
+  .fs-11-print {
+    font-size: 11pt !important;
+  }
+  
+  /* Compact content for printing */
+  .compact-print-table td, .compact-print-table th {
+    padding: 4px 2px !important;
+    font-size: 10pt !important;
+    line-height: 1.2 !important;
+    border: 1px solid black !important;
+  }
+  .compact-print-table thead th {
+    background-color: #ddd !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    border: 1px solid black !important;
+    vertical-align: middle !important;
+  }
+  .table {
+    margin-bottom: 0.1in !important;
+    border-collapse: collapse !important;
+  }
+  
+  /* Financial blocks compact */
+  .card, .card-header, .card-body {
+    border: none !important;
+  }
+  .border-success, .border-danger, .border-opacity-25 {
+    border: 1px solid #666 !important;
+  }
+  .bg-success, .bg-danger, .bg-opacity-10 {
+    background-color: #eee !important;
+  }
+  .page-break {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+}
