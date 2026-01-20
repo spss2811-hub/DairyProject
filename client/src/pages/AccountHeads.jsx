@@ -121,11 +121,22 @@ const AccountHeads = () => {
                     value={formData.type}
                     onChange={handleChange}
                   >
-                    <option value="Income">Income</option>
-                    <option value="Expense">Expense</option>
-                    <option value="Asset">Asset</option>
-                    <option value="Liability">Liability</option>
-                    <option value="Equity">Equity</option>
+                    <option value="Direct Income">Direct Income</option>
+                    <option value="Indirect Income">Indirect Income</option>
+                    <option value="Direct Expenses">Direct Expenses</option>
+                    <option value="Indirect Expenses">Indirect Expenses</option>
+                    <option value="Fixed Assets">Fixed Assets</option>
+                    <option value="Current Assets">Current Assets</option>
+                    <option value="Bank Accounts">Bank Accounts</option>
+                    <option value="Cash-in-hand">Cash-in-hand</option>
+                    <option value="Capital Account">Capital Account</option>
+                    <option value="Loans (Liability)">Loans (Liability)</option>
+                    <option value="Current Liabilities">Current Liabilities</option>
+                    <option value="Duties & Taxes">Duties & Taxes</option>
+                    <option value="Provisions">Provisions</option>
+                    <option value="Sundry Debtors">Sundry Debtors</option>
+                    <option value="Sundry Creditors">Sundry Creditors</option>
+                    <option value="Suspense A/c">Suspense A/c</option>
                     <option value="Contra Entry">Contra Entry</option>
                   </Form.Select>
                 </Form.Group>
@@ -178,10 +189,10 @@ const AccountHeads = () => {
                   <tbody>
                     {heads.length > 0 ? (
                       // Group and Sort
-                      ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Contra Entry'].map(type => {
+                      ['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Provisions', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].map(type => {
                         const typeHeads = heads
                           .filter(h => h.type === type)
-                          .sort((a, b) => a.headName.localeCompare(b.headName));
+                          .sort((a, b) => (a.headName || '').localeCompare(b.headName || ''));
                         
                         if (typeHeads.length === 0) return null;
 
@@ -193,7 +204,7 @@ const AccountHeads = () => {
                             {typeHeads.map((item, index) => (
                               <tr key={item.id}>
                                 <td>{index + 1}</td>
-                                <td className="fw-bold">{item.headName}</td>
+                                <td className="fw-bold">{item.headName || '-'}</td>
                                 <td>
                                   <span className={`badge ${
                                     item.type === 'Income' ? 'bg-success' : 
@@ -237,18 +248,18 @@ const AccountHeads = () => {
                       </tr>
                     )}
                     {/* Display any types not in the standard list */}
-                    {heads.length > 0 && heads.filter(h => !['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Contra Entry'].includes(h.type)).length > 0 && (
+                    {heads.length > 0 && heads.filter(h => !['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Provisions', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].includes(h.type)).length > 0 && (
                         <>
                             <tr className="table-secondary">
                                 <td colSpan="5" className="fw-bold text-uppercase small">Others</td>
                             </tr>
                             {heads
-                                .filter(h => !['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Contra Entry'].includes(h.type))
-                                .sort((a, b) => a.headName.localeCompare(b.headName))
+                                .filter(h => !['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Provisions', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].includes(h.type))
+                                .sort((a, b) => (a.headName || '').localeCompare(b.headName || ''))
                                 .map((item, index) => (
                                     <tr key={item.id}>
                                         <td>{index + 1}</td>
-                                        <td className="fw-bold">{item.headName}</td>
+                                        <td className="fw-bold">{item.headName || '-'}</td>
                                         <td><span className="badge bg-secondary">{item.type}</span></td>
                                         <td>{item.description}</td>
                                         <td className="text-center">

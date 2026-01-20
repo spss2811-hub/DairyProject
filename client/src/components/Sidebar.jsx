@@ -28,7 +28,9 @@ const Sidebar = () => {
     employeeMaster: false,
     supplierVendorMaster: false,
     bankMaster: false,
-    accountCategory: false
+    accountCategory: false,
+    openingBalance: false,
+    cashBook: false
   });
 
   const [processPeriod, setProcessPeriod] = useState('');
@@ -82,8 +84,15 @@ const Sidebar = () => {
           toDate
       });
       
-      alert(`Process Complete! Updated ${res.data.updated} records.`);
-      fetchPeriods(); // Refresh to reflect any state changes
+      // Automatically lock the period after processing
+      await api.post('/locked-periods/lock', { periodId: processPeriod });
+      
+      alert(`Process Complete! Updated ${res.data.updated} records and locked the period.`);
+      fetchPeriods(); // Refresh to reflect the lock state
+
+      if (location.pathname === '/bill-periods' || location.pathname === '/bill-period-list') {
+        window.location.reload();
+      }
     } catch (err) {
       console.error(err);
       alert("Process failed: " + (err.response?.data?.error || err.message));
@@ -534,10 +543,39 @@ const Sidebar = () => {
                   </Collapse>
                 </Nav.Item>
 
+                {/* Opening Balance Submenu */}
                 <Nav.Item className="ms-1">
-                  <Nav.Link as={Link} to="/transactions" active={activePath === '/transactions'}>
+                  <div 
+                    className={`nav-link cursor-pointer red-text-nav ${activePath.includes('opening-balances') ? 'active' : ''}`}
+                    onClick={() => toggleMenu('openingBalance')}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <FaMoneyBillWave className="me-2" /> <span>Opening Balance</span>
+                    {!isCollapsed && <div className="ms-auto">{openMenus.openingBalance ? <FaChevronDown size={10}/> : <FaChevronRight size={10}/>}</div>}
+                  </div>
+                  <Collapse in={openMenus.openingBalance && !isCollapsed}>
+                    <Nav className="flex-column sidebar-sub-nav">
+                      <Nav.Link as={Link} to="/opening-balances" active={activePath === '/opening-balances'}>└ <span>Manage Balances</span></Nav.Link>
+                    </Nav>
+                  </Collapse>
+                </Nav.Item>
+
+                {/* Cash Book Submenu */}
+                <Nav.Item className="ms-1">
+                  <div 
+                    className={`nav-link cursor-pointer red-text-nav ${activePath.includes('transactions') || activePath.includes('cash-book-report') ? 'active' : ''}`}
+                    onClick={() => toggleMenu('cashBook')}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <FaMoneyBillWave className="me-2" /> <span>Cash Book</span>
-                  </Nav.Link>
+                    {!isCollapsed && <div className="ms-auto">{openMenus.cashBook ? <FaChevronDown size={10}/> : <FaChevronRight size={10}/>}</div>}
+                  </div>
+                  <Collapse in={openMenus.cashBook && !isCollapsed}>
+                    <Nav className="flex-column sidebar-sub-nav">
+                      <Nav.Link as={Link} to="/transactions" active={activePath === '/transactions'}>└ <span>New Entry</span></Nav.Link>
+                      <Nav.Link as={Link} to="/cash-book-report" active={activePath === '/cash-book-report'}>└ <span>Cash Book Report</span></Nav.Link>
+                    </Nav>
+                  </Collapse>
                 </Nav.Item>
             </div>
           </Collapse>

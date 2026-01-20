@@ -39,15 +39,17 @@ const BillPeriods = () => {
   };
 
   const handleToggleLock = async (periodId) => {
+      console.log("Toggling lock for:", periodId);
       try {
           const res = await api.post('/locked-periods/toggle', { periodId });
           const newLocked = res.data;
+          console.log("New locked list:", newLocked);
           setLockedPeriods(newLocked);
           // Refresh period list to include newly locked ones if needed
           const bpRes = await api.get('/bill-periods');
           setPeriods(generateBillPeriods(bpRes.data, newLocked));
       } catch (err) {
-          console.error(err);
+          console.error("Lock toggle failed:", err);
           alert("Failed to toggle lock");
       }
   };

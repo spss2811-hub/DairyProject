@@ -18,7 +18,9 @@ const Dashboard = () => {
     cashBook: {
         income: 0,
         expense: 0,
-        balance: 0
+        balance: 0,
+        openingBalance: 0,
+        closingBalance: 0
     }
   });
 
@@ -75,25 +77,29 @@ const Dashboard = () => {
         </Col>
       </Row>
 
-      {/* Cash Book Quick Summary */}
+      {/* Cash Book Entry Quick Summary */}
       <Card className="shadow-sm border-0 bg-white">
           <Card.Header className="bg-dark text-white py-1 px-3">
-              <h6 className="mb-0 small"><FaCashRegister className="me-2" /> Cash Book Quick Summary</h6>
+              <h6 className="mb-0 small"><FaCashRegister className="me-2" /> Cash & Bank Overview</h6>
           </Card.Header>
           <Card.Body className="py-3">
             <Row className="text-center">
-                <Col md={4} className="border-end">
-                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Total Income</small>
+                <Col md={3} className="border-end">
+                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Opening Balance</small>
+                    <h5 className="text-primary mb-0">{formatCurrency(stats.cashBook.openingBalance)}</h5>
+                </Col>
+                <Col md={3} className="border-end">
+                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Receipts</small>
                     <h5 className="text-success mb-0">{formatCurrency(stats.cashBook.income)}</h5>
                 </Col>
-                <Col md={4} className="border-end">
-                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Total Expense</small>
+                <Col md={3} className="border-end">
+                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Payments</small>
                     <h5 className="text-danger mb-0">{formatCurrency(stats.cashBook.expense)}</h5>
                 </Col>
-                <Col md={4}>
-                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Net Balance</small>
-                    <h5 className={`${stats.cashBook.balance >= 0 ? "text-primary" : "text-danger"} mb-0`}>
-                        {formatCurrency(stats.cashBook.balance)}
+                <Col md={3}>
+                    <small className="text-muted text-uppercase d-block" style={{fontSize: '0.65rem'}}>Closing Balance</small>
+                    <h5 className={`${stats.cashBook.closingBalance >= 0 ? "text-primary" : "text-danger"} mb-0`}>
+                        {formatCurrency(stats.cashBook.closingBalance)}
                     </h5>
                 </Col>
             </Row>

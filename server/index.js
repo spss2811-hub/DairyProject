@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
+const low = require('lowdb');
+const FileSync = require('lowdb/adapters/FileSync');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -9,41 +10,25 @@ const morgan = require('morgan');
 
 dotenv.config();
 
-// Import Models
-const Farmer = require('./models/Farmer');
-const Customer = require('./models/Customer');
-const RateConfig = require('./models/RateConfig');
-const Collection = require('./models/Collection');
-const { Branch, MilkRoute, DeliveryBoy, BillPeriod, LockedPeriod, AdditionsDeduction, AccountHead } = require('./models/Masters');
-const { MilkReceipt, MilkDispatch, MilkClosingBalance, MilkReconciliation } = require('./models/MilkOperations');
-const { DairySale, LocalSale, Sale, Transaction, CommonSaleRate, IndividualSaleRate } = require('./models/SalesOperations');
-
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI;
+const adapter = new FileSync('db.json');
+const db = low(adapter);
 
 // Security & Performance Middleware
-app.use(helmet()); // Sets secure HTTP headers
-app.use(compression()); // Compresses response bodies
-app.use(morgan('combined')); // Logs requests
+app.use(helmet()); 
+app.use(compression()); 
+app.use(morgan('combined'));
 
 // CORS Configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || '*', // Restrict to frontend URL in production
+  origin: process.env.FRONTEND_URL || '*', 
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
 
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-
-// Connect to MongoDB
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('MongoDB Connected'))
-    .catch(err => {
-      console.error('MongoDB Connection Error:', err);
-      process.exit(1); // Exit if DB fails
-    });
 
 // --- Helper Functions ---
 const getBillPeriodForDate = (dateStr, basePeriods) => {
@@ -71,44 +56,38 @@ const getBillPeriodForDate = (dateStr, basePeriods) => {
     return '';
 };
 
-const isLocked = async (dateStr) => {
-    const basePeriods = await BillPeriod.find();
+const isLocked = (dateStr) => {
+    const basePeriods = db.get('billPeriods').value() || [];
     const periodId = getBillPeriodForDate(dateStr, basePeriods);
     if (!periodId) return false;
-    const locked = await LockedPeriod.findOne({ periodId });
-    return !!locked;
+    const locked = db.get('lockedPeriods').value() || [];
+    return locked.includes(periodId);
 };
 
-const isPeriodIdLocked = async (periodId) => {
-    const locked = await LockedPeriod.findOne({ periodId });
-    return !!locked;
+const isPeriodIdLocked = (periodId) => {
+    const locked = db.get('lockedPeriods').value() || [];
+    return locked.includes(periodId);
 };
 
-const isRangeLocked = async (fromDateStr, toDateStr) => {
+const isRangeLocked = (fromDateStr, toDateStr) => {
     if (!fromDateStr || !toDateStr) return false;
-    
     const parse = (s) => {
         const p = s.split('-');
         return new Date(p[0], p[1]-1, p[2]);
     };
-
     let current = parse(fromDateStr);
     const end = parse(toDateStr);
-    
     if (isNaN(current.getTime()) || isNaN(end.getTime())) return false;
-
-    // Optimization: Get all locked periods first
-    const allLocked = await LockedPeriod.find();
-    const lockedIds = allLocked.map(l => l.periodId);
-    const basePeriods = await BillPeriod.find();
-
+    
+    const lockedIds = db.get('lockedPeriods').value() || [];
+    const basePeriods = db.get('billPeriods').value() || [];
+    
     const formatDateLocal = (date) => {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     };
-
     while (current <= end) {
         const pid = getBillPeriodForDate(formatDateLocal(current), basePeriods);
         if (pid && lockedIds.includes(pid)) return true;
@@ -117,12 +96,10 @@ const isRangeLocked = async (fromDateStr, toDateStr) => {
     return false;
 };
 
-// ... [Keep calculateCollectionData logic same but accept data as args] ...
 const calculateCollectionData = (entry, config) => {
-    // Exact same logic as original, just pure JS function
     const { date, shift, farmerId, qtyKg, fat, snf, kgFat, kgSnf } = entry;
-    // Note: Farmer object needs to be passed in, can't sync look it up inside
-    const farmer = entry.farmer; 
+    // For lowdb, farmer is passed in or looked up here
+    const farmer = entry.farmer || db.get('farmers').find({ id: farmerId }).value();
     
     const kgs = parseFloat(qtyKg) || 0;
     const lts = parseFloat(entry.qty) || (kgs > 0 ? kgs / 1.03 : 0);
@@ -130,12 +107,10 @@ const calculateCollectionData = (entry, config) => {
     const s = parseFloat(snf) || 0;
     const kFat = parseFloat(kgFat) || (kgs * f / 100);
     const kSnf = parseFloat(kgSnf) || (kgs * s / 100);
-
     let rate = 0, amount = 0, snfIncentiveAmt = 0, snfDeductionAmt = 0, fatIncentiveAmt = 0, fatDeductionAmt = 0;
     let extraRateAmt = 0, cartageAmt = 0, qtyIncentiveAmt = 0, baseAmount = 0, bonusAmount = 0;
     const qty = lts; 
 
-    // ... [Helpers inside calculateCollectionData] ...
     const isSectionApplicable = (eDate, eShift, prefix, cfg) => {
         const fromDateKey = `${prefix}FromDate`;
         const toDateKey = `${prefix}ToDate`;
@@ -205,7 +180,6 @@ const calculateCollectionData = (entry, config) => {
         const match = config.qtyIncentiveSlabs.find(sl => qty >= parseFloat(sl.minQty) && qty <= parseFloat(sl.maxQty) && isSlabApplicable(sl));
         if (match) { qtyInc.val = parseFloat(match.rate); qtyInc.method = match.method || 'liter'; qtySlabFound = true; }
     }
-    
     const bonusSlabs = (farmer && farmer.bonusSlabs && farmer.bonusSlabs.length > 0) ? farmer.bonusSlabs : (config.bonusSlabs || []);
     if (bonusSlabs && Array.isArray(bonusSlabs)) {
         const match = bonusSlabs.find(sl => qty >= parseFloat(sl.minQty) && qty <= parseFloat(sl.maxQty) && isSlabApplicable(sl));
@@ -303,19 +277,14 @@ const calculateCollectionData = (entry, config) => {
     };
 };
 
-const findApplicableConfig = async (date, shift) => {
-    // Optimized: Find only relevant configs? No, simple logic: get all and find in JS
-    // Better: RateConfig.find()
-    const configs = await RateConfig.find();
+const findApplicableConfig = (date, shift) => {
+    const configs = db.get('rateConfigs').value() || [];
     const shiftValue = (s) => (s === 'Morning' || s === 'AM') ? 0 : 1;
     const entryDate = new Date(date);
     const entryShiftVal = shiftValue(shift);
-
-    // Fallback?
     let fallback = null;
-    
     const match = configs.find(c => {
-        if (!c.fromDate) { fallback = c; return false; } // Assuming rateConfig (legacy) stored as config with no dates?
+        if (!c.fromDate) { fallback = c; return false; } 
         const fromDate = new Date(c.fromDate);
         const toDate = new Date(c.toDate);
         const fromShiftVal = shiftValue(c.fromShift);
@@ -325,235 +294,401 @@ const findApplicableConfig = async (date, shift) => {
         if (entryDate.getTime() === toDate.getTime() && entryShiftVal > toShiftVal) return false;
         return true;
     });
-    
     return match || fallback || {}; 
 };
 
 // --- API Endpoints ---
 
-// Rate Configs
-app.get('/rate-configs', async (req, res) => res.json(await RateConfig.find()));
-app.post('/rate-configs', async (req, res) => {
-    if (await isRangeLocked(req.body.fromDate, req.body.toDate)) return res.status(403).json({ error: 'Locked period' });
-    const config = new RateConfig({ ...req.body, id: Date.now().toString() });
-    await config.save();
+app.get('/rate-configs', (req, res) => res.json(db.get('rateConfigs').value() || []));
+app.post('/rate-configs', (req, res) => {
+    if (isRangeLocked(req.body.fromDate, req.body.toDate)) return res.status(403).json({ error: 'Locked period' });
+    const config = { ...req.body, id: Date.now().toString() };
+    db.get('rateConfigs').push(config).write();
     res.json(config);
 });
-app.put('/rate-configs/:id', async (req, res) => {
+app.put('/rate-configs/:id', (req, res) => {
     const { id } = req.params;
-    const existing = await RateConfig.findOne({ id });
-    if (existing && await isRangeLocked(existing.fromDate, existing.toDate)) return res.status(403).json({ error: 'Locked period' });
-    if (await isRangeLocked(req.body.fromDate, req.body.toDate)) return res.status(403).json({ error: 'Locked period' });
-    const updated = await RateConfig.findOneAndUpdate({ id }, req.body, { new: true });
-    res.json(updated);
+    const existing = db.get('rateConfigs').find({ id }).value();
+    if (existing && isRangeLocked(existing.fromDate, existing.toDate)) return res.status(403).json({ error: 'Locked period' });
+    if (isRangeLocked(req.body.fromDate, req.body.toDate)) return res.status(403).json({ error: 'Locked period' });
+    db.get('rateConfigs').find({ id }).assign(req.body).write();
+    res.json(db.get('rateConfigs').find({ id }).value());
 });
-app.delete('/rate-configs/:id', async (req, res) => {
-    const existing = await RateConfig.findOne({ id: req.params.id });
-    if (existing && await isRangeLocked(existing.fromDate, existing.toDate)) return res.status(403).json({ error: 'Locked period' });
-    await RateConfig.deleteOne({ id: req.params.id });
+app.delete('/rate-configs/:id', (req, res) => {
+    const existing = db.get('rateConfigs').find({ id: req.params.id }).value();
+    if (existing && isRangeLocked(existing.fromDate, existing.toDate)) return res.status(403).json({ error: 'Locked period' });
+    db.get('rateConfigs').remove({ id: req.params.id }).write();
     res.json({ message: 'Deleted' });
 });
 
-// Farmers
-app.get('/farmers', async (req, res) => res.json(await Farmer.find()));
-app.post('/farmers', async (req, res) => {
-    // Check lock logic skipped for brevity, implement similarly if needed
-    const farmer = new Farmer({ ...req.body, id: Date.now().toString() });
-    await farmer.save();
+app.get('/farmers', (req, res) => res.json(db.get('farmers').value() || []));
+app.post('/farmers', (req, res) => {
+    const farmer = { ...req.body, id: Date.now().toString() };
+    db.get('farmers').push(farmer).write();
     res.json(farmer);
 });
-app.put('/farmers/:id', async (req, res) => {
-    const updated = await Farmer.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-    res.json(updated);
+app.put('/farmers/:id', (req, res) => {
+    db.get('farmers').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('farmers').find({ id: req.params.id }).value());
 });
-app.delete('/farmers/:id', async (req, res) => {
-    await Farmer.deleteOne({ id: req.params.id });
+app.delete('/farmers/:id', (req, res) => {
+    db.get('farmers').remove({ id: req.params.id }).write();
     res.json({ message: 'Deleted' });
 });
-app.post('/farmers/bulk', async (req, res) => {
+app.post('/farmers/bulk', (req, res) => {
     const farmers = req.body;
-    const existingCodes = (await Farmer.find({}, 'code')).map(f => f.code);
+    const existingCodes = (db.get('farmers').value() || []).map(f => f.code);
     let imported = 0, skipped = 0;
-    const toInsert = [];
-    
     farmers.forEach((f, idx) => {
         if (existingCodes.includes(f.code)) skipped++;
         else if (f.code && f.name) {
-            toInsert.push({ ...f, id: (Date.now() + idx).toString() });
+            db.get('farmers').push({ ...f, id: (Date.now() + idx).toString() }).write();
             imported++;
         } else skipped++;
     });
-    
-    if (toInsert.length > 0) await Farmer.insertMany(toInsert);
     res.json({ imported, skipped });
 });
 
-// Customers
-app.get('/customers', async (req, res) => res.json(await Customer.find()));
-app.post('/customers', async (req, res) => {
-    const customer = new Customer({ ...req.body, id: Date.now().toString() });
-    await customer.save();
+app.get('/customers', (req, res) => res.json(db.get('customers').value() || []));
+app.post('/customers', (req, res) => {
+    const customer = { ...req.body, id: Date.now().toString() };
+    db.get('customers').push(customer).write();
     res.json(customer);
 });
-app.put('/customers/:id', async (req, res) => {
-    const updated = await Customer.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-    res.json(updated);
+app.put('/customers/:id', (req, res) => {
+    db.get('customers').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('customers').find({ id: req.params.id }).value());
 });
-app.delete('/customers/:id', async (req, res) => {
-    await Customer.deleteOne({ id: req.params.id });
+app.delete('/customers/:id', (req, res) => {
+    db.get('customers').remove({ id: req.params.id }).write();
     res.json({ message: 'Deleted' });
 });
 
-// Masters
-app.get('/milk-routes', async (req, res) => res.json(await MilkRoute.find()));
-app.post('/milk-routes', async (req, res) => res.json(await new MilkRoute({ ...req.body, id: Date.now().toString() }).save()));
-app.put('/milk-routes/:id', async (req, res) => res.json(await MilkRoute.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/milk-routes/:id', async (req, res) => { await MilkRoute.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
-
-app.get('/branches', async (req, res) => res.json(await Branch.find()));
-app.post('/branches', async (req, res) => res.json(await new Branch({ ...req.body, id: Date.now().toString() }).save()));
-app.put('/branches/:id', async (req, res) => res.json(await Branch.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/branches/:id', async (req, res) => { await Branch.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
-
-app.get('/delivery-boys', async (req, res) => res.json(await DeliveryBoy.find()));
-app.post('/delivery-boys', async (req, res) => res.json(await new DeliveryBoy({ ...req.body, id: Date.now().toString() }).save()));
-app.put('/delivery-boys/:id', async (req, res) => res.json(await DeliveryBoy.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/delivery-boys/:id', async (req, res) => { await DeliveryBoy.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
-
-app.get('/bill-periods', async (req, res) => res.json(await BillPeriod.find()));
-app.post('/bill-periods', async (req, res) => res.json(await new BillPeriod({ ...req.body, id: Date.now().toString() }).save()));
-
-app.get('/locked-periods', async (req, res) => {
-    const locked = await LockedPeriod.find();
-    res.json(locked.map(l => l.periodId));
+app.get('/milk-routes', (req, res) => res.json(db.get('milkRoutes').value() || []));
+app.post('/milk-routes', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('milkRoutes').push(item).write();
+    res.json(item);
 });
-app.post('/locked-periods/toggle', async (req, res) => {
+app.put('/milk-routes/:id', (req, res) => {
+    db.get('milkRoutes').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('milkRoutes').find({ id: req.params.id }).value());
+});
+app.delete('/milk-routes/:id', (req, res) => { 
+    db.get('milkRoutes').remove({ id: req.params.id }).write(); 
+    res.json({ message: 'Deleted' }); 
+});
+
+app.get('/branches', (req, res) => res.json(db.get('branches').value() || []));
+app.post('/branches', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('branches').push(item).write();
+    res.json(item);
+});
+app.put('/branches/:id', (req, res) => {
+    db.get('branches').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('branches').find({ id: req.params.id }).value());
+});
+app.delete('/branches/:id', (req, res) => { 
+    db.get('branches').remove({ id: req.params.id }).write(); 
+    res.json({ message: 'Deleted' }); 
+});
+
+app.get('/delivery-boys', (req, res) => res.json(db.get('deliveryBoys').value() || []));
+app.post('/delivery-boys', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('deliveryBoys').push(item).write();
+    res.json(item);
+});
+app.put('/delivery-boys/:id', (req, res) => {
+    db.get('deliveryBoys').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('deliveryBoys').find({ id: req.params.id }).value());
+});
+app.delete('/delivery-boys/:id', (req, res) => { 
+    db.get('deliveryBoys').remove({ id: req.params.id }).write(); 
+    res.json({ message: 'Deleted' }); 
+});
+
+app.get('/bill-periods', (req, res) => res.json(db.get('billPeriods').value() || []));
+app.post('/bill-periods', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('billPeriods').push(item).write();
+    res.json(item);
+});
+
+app.get('/additions-deductions', (req, res) => res.json(db.get('additionsDeductions').value() || []));
+app.post('/additions-deductions', (req, res) => {
+    if (isPeriodIdLocked(req.body.billPeriod)) return res.status(403).json({ error: 'Locked' });
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('additionsDeductions').push(item).write();
+    res.json(item);
+});
+app.put('/additions-deductions/:id', (req, res) => {
+    const item = db.get('additionsDeductions').find({ id: req.params.id }).value();
+    if (item && isPeriodIdLocked(item.billPeriod)) return res.status(403).json({ error: 'Locked' });
+    if (isPeriodIdLocked(req.body.billPeriod)) return res.status(403).json({ error: 'Locked' });
+    db.get('additionsDeductions').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('additionsDeductions').find({ id: req.params.id }).value());
+});
+app.delete('/additions-deductions/:id', (req, res) => {
+    const item = db.get('additionsDeductions').find({ id: req.params.id }).value();
+    if (item && isPeriodIdLocked(item.billPeriod)) return res.status(403).json({ error: 'Locked' });
+    db.get('additionsDeductions').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
+app.get('/account-heads', (req, res) => res.json(db.get('accountHeads').value() || []));
+app.post('/account-heads', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('accountHeads').push(item).write();
+    res.json(item);
+});
+app.put('/account-heads/:id', (req, res) => {
+    db.get('accountHeads').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('accountHeads').find({ id: req.params.id }).value());
+});
+app.delete('/account-heads/:id', (req, res) => {
+    db.get('accountHeads').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
+app.get('/locked-periods', (req, res) => res.json(db.get('lockedPeriods').value() || []));
+app.post('/locked-periods/toggle', (req, res) => {
     const { periodId } = req.body;
-    const exists = await LockedPeriod.findOne({ periodId });
-    if (exists) await LockedPeriod.deleteOne({ periodId });
-    else await new LockedPeriod({ periodId }).save();
-    
-    const all = await LockedPeriod.find();
-    res.json(all.map(l => l.periodId));
+    if (!periodId) return res.status(400).json({ error: "periodId is required" });
+    let locked = db.get('lockedPeriods').value() || [];
+    if (locked.includes(periodId)) {
+        locked = locked.filter(id => id !== periodId);
+    } else {
+        locked.push(periodId);
+    }
+    db.set('lockedPeriods', locked).write();
+    res.json(locked);
 });
 
-// Collections
-app.get('/collections', async (req, res) => res.json(await Collection.find()));
-app.post('/collections', async (req, res) => {
-    if (await isLocked(req.body.date)) return res.status(403).json({ error: 'Locked' });
-    const config = await findApplicableConfig(req.body.date, req.body.shift);
-    const farmer = await Farmer.findOne({ id: req.body.farmerId }); // Need farmer for calc
+app.post('/locked-periods/lock', (req, res) => {
+    const { periodId } = req.body;
+    if (!periodId) return res.status(400).json({ error: "periodId is required" });
+    let locked = db.get('lockedPeriods').value() || [];
+    if (!locked.includes(periodId)) {
+        locked.push(periodId);
+        db.set('lockedPeriods', locked).write();
+    }
+    res.json(locked);
+});
+
+app.post('/collections/recalculate', (req, res) => {
+  try {
+      const { fromDate, toDate, fromShift, toShift } = req.body;
+      const shiftValue = (s) => (s === 'Morning' || s === 'AM') ? 0 : 1;
+      const collections = db.get('collections').value() || [];
+      let updatedCount = 0;
+      let errors = [];
+
+      collections.forEach(entry => {
+        if (fromDate) {
+            if (entry.date < fromDate) return;
+            if (entry.date === fromDate && fromShift) {
+                if (shiftValue(entry.shift) < shiftValue(fromShift)) return;
+            }
+        }
+        if (toDate) {
+            if (entry.date > toDate) return;
+            if (entry.date === toDate && toShift) {
+                if (shiftValue(entry.shift) > shiftValue(toShift)) return;
+            }
+        }
+        try {
+            const config = findApplicableConfig(entry.date, entry.shift);
+            const farmer = db.get('farmers').find({ id: entry.farmerId }).value();
+            const calculated = calculateCollectionData({ ...entry, farmer }, config);
+            Object.assign(entry, calculated);
+            updatedCount++;
+        } catch (err) {
+            errors.push(`Entry ${entry.id}: ${err.message}`);
+        }
+      });
+      db.write();
+      res.json({ message: 'Recalculation Complete', updated: updatedCount, errors });
+  } catch (error) {
+      res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/collections', (req, res) => res.json(db.get('collections').value() || []));
+app.post('/collections', (req, res) => {
+    if (isLocked(req.body.date)) return res.status(403).json({ error: 'Locked' });
+    const config = findApplicableConfig(req.body.date, req.body.shift);
+    const farmer = db.get('farmers').find({ id: req.body.farmerId }).value(); 
     const calculated = calculateCollectionData({ ...req.body, farmer }, config);
-    const collection = new Collection({ ...req.body, ...calculated, id: Date.now().toString() });
-    await collection.save();
+    const collection = { ...req.body, ...calculated, id: Date.now().toString() };
+    db.get('collections').push(collection).write();
     res.json(collection);
 });
-app.put('/collections/:id', async (req, res) => {
-    const item = await Collection.findOne({ id: req.params.id });
-    if (item && await isLocked(item.date)) return res.status(403).json({ error: 'Locked' });
-    
-    const config = await findApplicableConfig(req.body.date || item.date, req.body.shift || item.shift);
-    const farmer = await Farmer.findOne({ id: req.body.farmerId || item.farmerId });
-    const calculated = calculateCollectionData({ ...item.toObject(), ...req.body, farmer }, config); // Merge for calc
-    
-    const updated = await Collection.findOneAndUpdate({ id: req.params.id }, { ...req.body, ...calculated }, { new: true });
-    res.json(updated);
+app.put('/collections/:id', (req, res) => {
+    const item = db.get('collections').find({ id: req.params.id }).value();
+    if (item && isLocked(item.date)) return res.status(403).json({ error: 'Locked' });
+    const config = findApplicableConfig(req.body.date || item.date, req.body.shift || item.shift);
+    const farmer = db.get('farmers').find({ id: req.body.farmerId || item.farmerId }).value();
+    const calculated = calculateCollectionData({ ...item, ...req.body, farmer }, config);
+    db.get('collections').find({ id: req.params.id }).assign({ ...req.body, ...calculated }).write();
+    res.json(db.get('collections').find({ id: req.params.id }).value());
 });
-app.delete('/collections/:id', async (req, res) => {
-    const item = await Collection.findOne({ id: req.params.id });
-    if (item && await isLocked(item.date)) return res.status(403).json({ error: 'Locked' });
-    await Collection.deleteOne({ id: req.params.id });
+app.delete('/collections/:id', (req, res) => {
+    const item = db.get('collections').find({ id: req.params.id }).value();
+    if (item && isLocked(item.date)) return res.status(403).json({ error: 'Locked' });
+    db.get('collections').remove({ id: req.params.id }).write();
     res.json({ message: 'Deleted' });
 });
-app.post('/collections/delete-by-date', async (req, res) => {
+app.post('/collections/delete-by-date', (req, res) => {
     const { date, shift } = req.body;
-    if (await isLocked(date)) return res.status(403).json({ error: 'Locked' });
-    const query = { date };
-    if (shift) query.shift = new RegExp(`^${shift}$`, 'i'); // Case insensitive
-    const result = await Collection.deleteMany(query);
-    res.json({ deleted: result.deletedCount });
+    if (isLocked(date)) return res.status(403).json({ error: 'Locked' });
+    db.get('collections').remove(c => {
+        const matchesDate = c.date === date;
+        const matchesShift = shift ? c.shift.toLowerCase() === shift.toLowerCase() : true;
+        return matchesDate && matchesShift;
+    }).write();
+    res.json({ message: 'Deleted' });
 });
-app.post('/collections/bulk', async (req, res) => {
+app.post('/collections/bulk', (req, res) => {
     const entries = req.body;
     let imported = 0, errors = [];
     const timestamp = Date.now();
-    
-    // Optimization: Fetch all needed farmers once? Or simply loop (slower but safer)
-    // For bulk, let's just loop for now.
-    
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        if (await isLocked(entry.date)) { errors.push(`Row ${i}: Locked`); continue; }
+    entries.forEach((entry, i) => {
+        if (isLocked(entry.date)) { errors.push(`Row ${i}: Locked`); return; }
         try {
-            const config = await findApplicableConfig(entry.date, entry.shift);
-            const farmer = await Farmer.findOne({ id: entry.farmerId });
+            const config = findApplicableConfig(entry.date, entry.shift);
+            const farmer = db.get('farmers').find({ id: entry.farmerId }).value();
             const calculated = calculateCollectionData({ ...entry, farmer }, config);
-            await new Collection({ ...entry, ...calculated, id: (timestamp + i).toString() }).save();
+            db.get('collections').push({ ...entry, ...calculated, id: (timestamp + i).toString() }).write();
             imported++;
         } catch (err) {
             errors.push(`Row ${i}: ${err.message}`);
         }
-    }
+    });
     res.json({ imported, errors });
 });
 
-// Operations
-app.get('/milk-receipts', async (req, res) => res.json(await MilkReceipt.find()));
-app.post('/milk-receipts', async (req, res) => res.json(await new MilkReceipt({ ...req.body, id: Date.now().toString() }).save()));
-app.put('/milk-receipts/:id', async (req, res) => res.json(await MilkReceipt.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/milk-receipts/:id', async (req, res) => { await MilkReceipt.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
+app.get('/milk-receipts', (req, res) => res.json(db.get('milkReceipts').value() || []));
+app.post('/milk-receipts', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('milkReceipts').push(item).write();
+    res.json(item);
+});
+app.put('/milk-receipts/:id', (req, res) => {
+    db.get('milkReceipts').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('milkReceipts').find({ id: req.params.id }).value());
+});
+app.delete('/milk-receipts/:id', (req, res) => {
+    db.get('milkReceipts').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
 
-app.get('/milk-dispatches', async (req, res) => res.json(await MilkDispatch.find()));
-app.post('/milk-dispatches', async (req, res) => res.json(await new MilkDispatch({ ...req.body, id: Date.now().toString() }).save()));
-app.put('/milk-dispatches/:id', async (req, res) => res.json(await MilkDispatch.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/milk-dispatches/:id', async (req, res) => { await MilkDispatch.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
+app.get('/milk-dispatches', (req, res) => res.json(db.get('milkDispatches').value() || []));
+app.post('/milk-dispatches', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('milkDispatches').push(item).write();
+    res.json(item);
+});
+app.put('/milk-dispatches/:id', (req, res) => {
+    db.get('milkDispatches').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('milkDispatches').find({ id: req.params.id }).value());
+});
+app.delete('/milk-dispatches/:id', (req, res) => {
+    db.get('milkDispatches').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
 
-app.get('/dairy-sales', async (req, res) => res.json(await DairySale.find()));
-app.post('/dairy-sales', async (req, res) => res.json(await new DairySale({ ...req.body, id: Date.now().toString() }).save()));
-app.put('/dairy-sales/:id', async (req, res) => res.json(await DairySale.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/dairy-sales/:id', async (req, res) => { await DairySale.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
+app.get('/dairy-sales', (req, res) => res.json(db.get('dairySales').value() || []));
+app.post('/dairy-sales', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('dairySales').push(item).write();
+    res.json(item);
+});
+app.put('/dairy-sales/:id', (req, res) => {
+    db.get('dairySales').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('dairySales').find({ id: req.params.id }).value());
+});
+app.delete('/dairy-sales/:id', (req, res) => {
+    db.get('dairySales').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
 
-app.get('/local-sales', async (req, res) => res.json(await LocalSale.find()));
-app.post('/local-sales', async (req, res) => res.json(await new LocalSale({ ...req.body, id: Date.now().toString() }).save()));
-app.post('/local-sales/bulk', async (req, res) => {
+app.get('/local-sales', (req, res) => res.json(db.get('localSales').value() || []));
+app.post('/local-sales', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('localSales').push(item).write();
+    res.json(item);
+});
+app.post('/local-sales/bulk', (req, res) => {
     const entries = req.body.map((e, i) => ({ ...e, id: (Date.now() + i).toString() }));
-    await LocalSale.insertMany(entries);
+    entries.forEach(e => db.get('localSales').push(e).write());
     res.json({ imported: entries.length });
 });
-app.put('/local-sales/:id', async (req, res) => res.json(await LocalSale.findOneAndUpdate({ id: req.params.id }, req.body, { new: true })));
-app.delete('/local-sales/:id', async (req, res) => { await LocalSale.deleteOne({ id: req.params.id }); res.json({ message: 'Deleted' }); });
+app.put('/local-sales/:id', (req, res) => {
+    db.get('localSales').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('localSales').find({ id: req.params.id }).value());
+});
+app.delete('/local-sales/:id', (req, res) => {
+    db.get('localSales').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
 
-app.get('/sales', async (req, res) => res.json(await Sale.find()));
-app.post('/sales', async (req, res) => res.json(await new Sale({ ...req.body, id: Date.now().toString() }).save()));
+app.get('/sales', (req, res) => res.json(db.get('sales').value() || []));
+app.post('/sales', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('sales').push(item).write();
+    res.json(item);
+});
 
-app.get('/transactions', async (req, res) => res.json(await Transaction.find()));
-app.post('/transactions', async (req, res) => res.json(await new Transaction({ ...req.body, id: Date.now().toString() }).save()));
+app.get('/transactions', (req, res) => res.json(db.get('transactions').value() || []));
+app.post('/transactions', (req, res) => {
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('transactions').push(item).write();
+    res.json(item);
+});
+app.put('/transactions/:id', (req, res) => {
+    db.get('transactions').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('transactions').find({ id: req.params.id }).value());
+});
+app.delete('/transactions/:id', (req, res) => {
+    db.get('transactions').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
 
-// Dashboard Stats
-app.get('/dashboard-stats', async (req, res) => {
+app.get('/dashboard-stats', (req, res) => {
     try {
-        const collections = await Collection.find();
-        const salesData = await LocalSale.find(); // Using LocalSale as primary sales data based on existing logic
-        const txns = await Transaction.find();
-        
+        const collections = db.get('collections').value() || [];
+        const salesData = db.get('localSales').value() || []; 
+        const txns = db.get('transactions').value() || [];
+        const openingBalances = db.get('openingBalances').value() || [];
+
         const totalMilkCollected = collections.reduce((acc, c) => acc + (parseFloat(c.qty) || 0), 0);
         const totalPayableToFarmers = collections.reduce((acc, c) => acc + (parseFloat(c.amount) || 0), 0);
-        
         const totalMilkSold = salesData.reduce((acc, s) => acc + (parseFloat(s.qty) || 0), 0);
         const totalSalesRevenue = salesData.reduce((acc, s) => acc + (parseFloat(s.amount) || 0), 0);
         
-        const totalIncome = txns.filter(t => t.type === 'credit').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
-        const totalExpense = txns.filter(t => t.type === 'debit').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+        const totalIncome = txns.filter(t => t.type === 'credit' || (t.type && t.type.startsWith('credit'))).reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+        const totalExpense = txns.filter(t => t.type === 'debit' || (t.type && t.type.startsWith('debit'))).reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
         
+        let totalCashOB = 0;
+        let totalBankOB = 0;
+        openingBalances.forEach(ob => {
+            totalCashOB += parseFloat(ob.cashBalance) || 0;
+            if (ob.bankBalances && Array.isArray(ob.bankBalances)) {
+                totalBankOB += ob.bankBalances.reduce((sum, b) => sum + (parseFloat(b.balance) || 0), 0);
+            }
+        });
+        const totalOB = totalCashOB + totalBankOB;
+        const closingBalance = totalOB + totalIncome - totalExpense;
+
         res.json({
-            totalMilkCollected,
-            totalPayableToFarmers,
-            totalMilkSold,
-            totalSalesRevenue,
-            cashBook: {
-                income: totalIncome,
-                expense: totalExpense,
-                balance: totalIncome - totalExpense
+            totalMilkCollected, totalPayableToFarmers, totalMilkSold, totalSalesRevenue,
+            cashBook: { 
+                income: totalIncome, 
+                expense: totalExpense, 
+                openingBalance: totalOB,
+                closingBalance: closingBalance
             }
         });
     } catch (err) {
@@ -561,7 +696,116 @@ app.get('/dashboard-stats', async (req, res) => {
     }
 });
 
-// Global Error Handler
+app.get('/common-sale-rates', (req, res) => res.json(db.get('common-sale-rates').value() || []));
+app.post('/common-sale-rates', (req, res) => {
+  const newItem = { id: Date.now().toString(), ...req.body };     
+  db.get('common-sale-rates').push(newItem).write();
+  res.json(newItem);
+});
+app.put('/common-sale-rates/:id', (req, res) => {
+  const { id } = req.params;
+  db.get('common-sale-rates').find({ id }).assign(req.body).write();
+  res.json(db.get('common-sale-rates').find({ id }).value());     
+});
+app.delete('/common-sale-rates/:id', (req, res) => {
+  db.get('common-sale-rates').remove({ id: req.params.id }).write();
+  res.status(200).send({ message: 'Deleted successfully' });
+});
+
+app.get('/individual-sale-rates', (req, res) => res.json(db.get('individual-sale-rates').value() || []));
+app.post('/individual-sale-rates', (req, res) => {
+  const newItem = { id: Date.now().toString(), ...req.body };     
+  db.get('individual-sale-rates').push(newItem).write();
+  res.json(newItem);
+});
+app.put('/individual-sale-rates/:id', (req, res) => {
+  const { id } = req.params;
+  db.get('individual-sale-rates').find({ id }).assign(req.body).write();
+  res.json(db.get('individual-sale-rates').find({ id }).value()); 
+});
+app.delete('/individual-sale-rates/:id', (req, res) => {
+  db.get('individual-sale-rates').remove({ id: req.params.id }).write();
+  res.status(200).send({ message: 'Deleted successfully' });      
+});
+
+app.get('/milk-reconciliations', (req, res) => res.json(db.get('milkReconciliations').value() || []));
+app.post('/milk-reconciliations', (req, res) => {
+  const newItem = { id: Date.now().toString(), ...req.body };     
+  db.get('milkReconciliations').push(newItem).write();
+  res.json(newItem);
+});
+app.put('/milk-reconciliations/:id', (req, res) => {
+  db.get('milkReconciliations').find({ id: req.params.id }).assign(req.body).write();
+  res.json(db.get('milkReconciliations').find({ id: req.params.id }).value());   
+});
+app.delete('/milk-reconciliations/:id', (req, res) => {
+  db.get('milkReconciliations').remove({ id: req.params.id }).write();
+  res.status(200).send({ message: 'Deleted successfully' });      
+});
+
+app.get('/milk-closing-balances', (req, res) => res.json(db.get('milkClosingBalances').value() || []));
+app.post('/milk-closing-balances', (req, res) => {
+  const newItem = { id: Date.now().toString(), ...req.body };     
+  db.get('milkClosingBalances').push(newItem).write();
+  res.json(newItem);
+});
+app.post('/milk-closing-balances/bulk', (req, res) => {
+  const entries = req.body;
+  if (!Array.isArray(entries)) return res.status(400).send({ message: 'Invalid data format' });
+  const collection = db.get('milkClosingBalances');
+  entries.forEach(entry => {
+    const existing = collection.find({ date: entry.date, shift: entry.shift, branchId: entry.branchId }).value();
+    if (existing) collection.find({ id: existing.id }).assign({ ...entry, id: existing.id }).value();
+    else collection.push({ ...entry, id: Date.now().toString() + Math.random().toString().slice(2, 8) }).value();
+  });
+  db.write();
+  res.json({ success: true, count: entries.length });
+});
+app.put('/milk-closing-balances/:id', (req, res) => {
+  db.get('milkClosingBalances').find({ id: req.params.id }).assign(req.body).write();
+  res.json(db.get('milkClosingBalances').find({ id: req.params.id }).value());   
+});
+app.delete('/milk-closing-balances/:id', (req, res) => {
+  db.get('milkClosingBalances').remove({ id: req.params.id }).write();
+  res.status(200).send({ message: 'Deleted successfully' });      
+});
+
+app.get('/banks', (req, res) => res.json(db.get('banks').value() || []));
+app.post('/banks', (req, res) => {
+    if (!db.has('banks').value()) {
+        db.set('banks', []).write();
+    }
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('banks').push(item).write();
+    res.json(item);
+});
+app.put('/banks/:id', (req, res) => {
+    db.get('banks').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('banks').find({ id: req.params.id }).value());
+});
+app.delete('/banks/:id', (req, res) => {
+    db.get('banks').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
+app.get('/opening-balances', (req, res) => res.json(db.get('openingBalances').value() || []));
+app.post('/opening-balances', (req, res) => {
+    if (!db.has('openingBalances').value()) {
+        db.set('openingBalances', []).write();
+    }
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('openingBalances').push(item).write();
+    res.json(item);
+});
+app.put('/opening-balances/:id', (req, res) => {
+    db.get('openingBalances').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('openingBalances').find({ id: req.params.id }).value());
+});
+app.delete('/opening-balances/:id', (req, res) => {
+    db.get('openingBalances').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ 
@@ -570,6 +814,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.get('/', (req, res) => res.send('API is running...'));
+app.get('/', (req, res) => res.send('API is running (JSON mode)...'));
 
-app.listen(PORT, () => console.log(`Mongo Server running on ${PORT}`));
+app.listen(PORT, () => console.log(`JSON Server running on ${PORT}`));

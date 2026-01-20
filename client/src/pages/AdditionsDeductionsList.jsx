@@ -18,7 +18,7 @@ const AdditionsDeductionsList = () => {
     loadData();
   }, []);
 
-  const fetchData = async () => {
+  const loadData = async () => {
     try {
       const [addRes, bpRes, farmRes, lockedRes] = await Promise.all([
         api.get('/additions-deductions'),
@@ -32,7 +32,8 @@ const AdditionsDeductionsList = () => {
           ...lockedRes.data
       ])].filter(Boolean);
 
-      setAdditions(addRes.data);
+      setItems(addRes.data);
+      setBasePeriods(bpRes.data);
       setBillPeriods(generateBillPeriods(bpRes.data, usedPeriodIds));
       setFarmers(farmRes.data);
     } catch (error) {

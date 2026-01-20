@@ -45,6 +45,10 @@ import MilkReconciliationList from './pages/MilkReconciliationList';
 import MilkClosingBalance from './pages/MilkClosingBalance';
 import MilkClosingBalanceList from './pages/MilkClosingBalanceList';
 import AccountHeads from './pages/AccountHeads';
+import OpeningBalances from './pages/OpeningBalances';
+import Banks from './pages/Banks';
+import BankList from './pages/BankList';
+import CashBookReport from './pages/CashBookReport';
 
 function App() {
   return (
@@ -97,6 +101,10 @@ function App() {
             <Route path="/milk-closing-balance" element={<MilkClosingBalance />} />
             <Route path="/milk-closing-balance-list" element={<MilkClosingBalanceList />} />
             <Route path="/account-heads" element={<AccountHeads />} />
+            <Route path="/opening-balances" element={<OpeningBalances />} />
+            <Route path="/banks" element={<Banks />} />
+            <Route path="/bank-list" element={<BankList />} />
+            <Route path="/cash-book-report" element={<CashBookReport />} />
             <Route path="/transactions" element={<Transactions />} />
           </Routes>
         </div>

@@ -151,11 +151,13 @@ const AdditionsDeductions = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [editItem, setEditItem] = useState(null);
+  const [accountHeads, setAccountHeads] = useState([]);
 
   useEffect(() => {
     loadItems();
     loadFarmers();
     loadBillPeriods();
+    loadAccountHeads();
 
     if (location.state && location.state.editItem) {
         const item = location.state.editItem;
@@ -172,6 +174,15 @@ const AdditionsDeductions = () => {
   const loadFarmers = async () => {
     const res = await api.get('/farmers');
     setFarmers(res.data);
+  };
+
+  const loadAccountHeads = async () => {
+    try {
+      const res = await api.get('/account-heads');
+      setAccountHeads(res.data);
+    } catch (err) {
+      console.error("Error loading account heads:", err);
+    }
   };
 
   const loadBillPeriods = async () => {
@@ -197,8 +208,11 @@ const AdditionsDeductions = () => {
   const additions = items.filter(i => i.type === 'Addition');
   const deductions = items.filter(i => i.type === 'Deduction');
 
-  const additionOptions = ["Sour Milk Value", "Others"];
-  const deductionOptions = ["Dairy Loan", "Third Party Loan", "Milk Tester/Analyzer", "Cattle Feed", "Testing Material", "Feed Suppliments", "Milk Bill", "Stationary", "Others"];
+  const additionOptions = accountHeads.filter(h => h.type === 'Income').map(h => h.headName);
+  if (!additionOptions.includes('Others')) additionOptions.push('Others');
+  
+  const deductionOptions = accountHeads.filter(h => h.type === 'Expense').map(h => h.headName);
+  if (!deductionOptions.includes('Others')) deductionOptions.push('Others');
 
   return (
     <div>
