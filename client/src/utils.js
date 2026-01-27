@@ -29,7 +29,7 @@ export const generateBillPeriods = (basePeriods, extraIds = []) => {
   
   const now = new Date();
   const endYear = now.getFullYear();
-  const endMonth = now.getMonth() + 6; // Current + 6 months
+  const endMonth = now.getMonth() + 24; // Cover next 2 years to ensure FY filtering works
 
   const startDate = new Date(startYearFixed, startMonthFixed, 1);
   const endDate = new Date(endYear, endMonth, 1);

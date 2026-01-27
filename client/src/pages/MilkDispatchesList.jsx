@@ -8,12 +8,23 @@ import { formatCurrency, formatDate } from '../utils';
 
 const MilkDispatchesList = () => {
   const [dispatches, setDispatches] = useState([]);
+  const [branches, setBranches] = useState([]);
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     loadDispatches();
+    loadBranches();
   }, []);
+
+  const loadBranches = async () => {
+    try {
+        const res = await api.get('/branches');
+        setBranches(res.data);
+    } catch (err) {
+        console.error("Error loading branches:", err);
+    }
+  };
 
   const loadDispatches = async () => {
     try {
@@ -22,6 +33,19 @@ const MilkDispatchesList = () => {
     } catch (err) {
       console.error("Error loading dispatches:", err);
     }
+  };
+
+  const getBranchName = (name, id) => {
+    if (id) {
+        const b = branches.find(br => String(br.id) === String(id));
+        if (b) return b.branchName;
+    }
+    if (name) {
+        const b = branches.find(br => String(br.id) === String(name) || br.branchName.toLowerCase() === name.toLowerCase());
+        if (b) return b.branchName;
+        return name;
+    }
+    return '-';
   };
 
   const handleFileUpload = (e) => {
@@ -38,10 +62,12 @@ const MilkDispatchesList = () => {
         
         const processedData = data.map(row => ({
           date: row.Date || new Date().toISOString().split('T')[0],
-          dispatchedByUnit: row['Dispatched By Unit'] || row['DispatchedBy'],
-          destinationUnit: row['Destination Unit'] || row['Destination'],
-          tankerNo: row['Tanker No'] || row['TankerNo'],
-          dcNo: row['DC No'] || row['DCNo'],
+          dispatchedByUnit: row['Dispatched By Unit'] || row['DispatchedBy'] || row['DispatchedByUnit'],
+          dispatchedByUnitId: row['Dispatched By Unit Id'] || row['DispatchedByUnitId'],
+          destinationUnit: row['Destination Unit'] || row['Destination'] || row['DestinationUnit'],
+          destinationUnitId: row['Destination Unit Id'] || row['DestinationUnitId'],
+          tankerNo: row['Tanker No'] || row['TankerNo'] || row['Tanker Number'],
+          dcNo: row['DC No'] || row['DCNo'] || row['DC Number'],
           
           // Dispatch Front
           dispatchFrontQtyKg: row['Disp Front Qty'] || row['DispatchFrontQtyKg'],
@@ -189,10 +215,10 @@ const MilkDispatchesList = () => {
                 return (
                     <tr key={d.id}>
                     <td>{formatDate(d.date)}</td>
-                    <td>{d.tankerNo}</td>
-                    <td>{d.dcNo}</td>
-                    <td>{d.dispatchedByUnit || '-'}</td>
-                    <td>{d.destinationUnit}</td>
+                    <td>{d.tankerNo || '-'}</td>
+                    <td>{d.dcNo || '-'}</td>
+                    <td>{getBranchName(d.dispatchedByUnit, d.dispatchedByUnitId)}</td>
+                    <td>{getBranchName(d.destinationUnit, d.destinationUnitId)}</td>
                     
                     {/* Dispatch Params */}
                     <td>{d.dispatchQtyKg || '-'}</td>

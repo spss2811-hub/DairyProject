@@ -8,21 +8,81 @@ import { formatCurrency, formatDate } from '../utils';
 
 const MilkReceiptsList = () => {
   const [receipts, setReceipts] = useState([]);
+  const [dispatches, setDispatches] = useState([]);
+  const [branches, setBranches] = useState([]);
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    loadReceipts();
+    loadData();
+    loadBranches();
   }, []);
 
-  const loadReceipts = async () => {
+  const loadBranches = async () => {
     try {
-      const res = await api.get('/milk-receipts');
-      setReceipts(res.data.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)));
+        const res = await api.get('/branches');
+        setBranches(res.data);
     } catch (err) {
-      console.error("Error loading receipts:", err);
+        console.error("Error loading branches:", err);
     }
   };
+
+  const loadData = async () => {
+    try {
+      const [recRes, dispRes] = await Promise.all([
+        api.get('/milk-receipts'),
+        api.get('/milk-dispatches')
+      ]);
+      setReceipts(recRes.data);
+      setDispatches(dispRes.data);
+    } catch (err) {
+      console.error("Error loading data:", err);
+    }
+  };
+
+  const getBranchName = (name, id) => {
+    if (id) {
+        const b = branches.find(br => String(br.id) === String(id));
+        if (b) return b.branchName;
+    }
+    if (name) {
+        const b = branches.find(br => String(br.id) === String(name) || br.branchName.toLowerCase() === name.toLowerCase());
+        if (b) return b.branchName;
+        return name;
+    }
+    return '-';
+  };
+
+  // Logic to merge receipts and pending dispatches
+  const getMergedData = () => {
+    // 1. Start with existing receipts
+    const merged = receipts.map(r => ({ ...r, type: 'receipt' }));
+    const receiptDcNos = new Set(receipts.map(r => r.dcNo).filter(Boolean));
+
+    // 2. Add dispatches that haven't been received yet (based on DC No)
+    const pendingDispatches = dispatches.filter(d => 
+        d.dcNo && !receiptDcNos.has(d.dcNo) && (d.isInTransit === true || d.isInTransit === undefined)
+    ).map(d => ({
+        id: `pending-${d.id}`,
+        dispatchId: d.id,
+        date: d.date,
+        tankerNo: d.tankerNo,
+        dcNo: d.dcNo,
+        receivedByUnit: d.destinationUnit,
+        receivedByUnitId: d.destinationUnitId,
+        unitName: d.dispatchedByUnit,
+        sourceUnitId: d.dispatchedByUnitId,
+        sourceQtyKg: d.dispatchQtyKg,
+        sourceFat: d.dispatchFat,
+        sourceClr: d.dispatchClr,
+        sourceSnf: d.dispatchSnf,
+        type: 'pending'
+    }));
+
+    return [...merged, ...pendingDispatches].sort((a, b) => b.date.localeCompare(a.date));
+  };
+
+  const mergedList = getMergedData();
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -38,10 +98,12 @@ const MilkReceiptsList = () => {
         
         const processedData = data.map(row => ({
           date: row.Date || new Date().toISOString().split('T')[0],
-          receivedByUnit: row['Received By Unit'] || row['ReceivedBy'],
-          unitName: row['Source Unit'] || row['SourceUnit'],
-          tankerNo: row['Tanker No'] || row['TankerNo'],
-          dcNo: row['DC No'] || row['DCNo'],
+          receivedByUnit: row['Received By Unit'] || row['ReceivedBy'] || row['ReceivedByUnit'],
+          receivedByUnitId: row['Received By Unit Id'] || row['ReceivedByUnitId'],
+          unitName: row['Source Unit'] || row['SourceUnit'] || row['Source Unit Name'] || row['SourceUnitName'],
+          sourceUnitId: row['Source Unit Id'] || row['SourceUnitId'],
+          tankerNo: row['Tanker No'] || row['TankerNo'] || row['Tanker Number'],
+          dcNo: row['DC No'] || row['DCNo'] || row['DC Number'],
           
           // Source Front
           sourceFrontQtyKg: row['Src Front Qty'] || row['SourceFrontQtyKg'],
@@ -146,6 +208,7 @@ const MilkReceiptsList = () => {
             <thead className="bg-light">
               <tr>
                 <th rowSpan="2" className="align-middle">Date</th>
+                <th rowSpan="2" className="align-middle">Status</th>
                 <th rowSpan="2" className="align-middle">Tanker No</th>
                 <th rowSpan="2" className="align-middle">DC No</th>
                 <th rowSpan="2" className="align-middle">Received By</th>
@@ -171,21 +234,28 @@ const MilkReceiptsList = () => {
               </tr>
             </thead>
             <tbody>
-              {receipts.map(r => {
-                const diffQty = (parseFloat(r.qtyKg) || 0) - (parseFloat(r.sourceQtyKg) || 0);
-                const diffFat = (parseFloat(r.fat) || 0) - (parseFloat(r.sourceFat) || 0);
-                const diffClr = (parseFloat(r.clr) || 0) - (parseFloat(r.sourceClr) || 0);
-                const diffSnf = (parseFloat(r.snf) || 0) - (parseFloat(r.sourceSnf) || 0);
+              {mergedList.map(r => {
+                const isPending = r.type === 'pending';
+                const diffQty = !isPending ? (parseFloat(r.qtyKg) || 0) - (parseFloat(r.sourceQtyKg) || 0) : 0;
+                const diffFat = !isPending ? (parseFloat(r.fat) || 0) - (parseFloat(r.sourceFat) || 0) : 0;
+                const diffClr = !isPending ? (parseFloat(r.clr) || 0) - (parseFloat(r.sourceClr) || 0) : 0;
+                const diffSnf = !isPending ? (parseFloat(r.snf) || 0) - (parseFloat(r.sourceSnf) || 0) : 0;
 
                 const getDiffClass = (val) => val < 0 ? 'text-danger fw-bold' : val > 0 ? 'text-success fw-bold' : '';
 
                 return (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={isPending ? 'table-warning' : ''}>
                     <td>{formatDate(r.date)}</td>
-                    <td>{r.tankerNo}</td>
-                    <td>{r.dcNo}</td>
-                    <td>{r.receivedByUnit || '-'}</td>
-                    <td>{r.unitName}</td>
+                    <td>
+                        {isPending ? 
+                            <span className="badge bg-warning text-dark">Pending</span> : 
+                            <span className="badge bg-success">Received</span>
+                        }
+                    </td>
+                    <td>{r.tankerNo || '-'}</td>
+                    <td>{r.dcNo || '-'}</td>
+                    <td>{getBranchName(r.receivedByUnit, r.receivedByUnitId)}</td>
+                    <td>{getBranchName(r.unitName || r.sourceUnit, r.sourceUnitId)}</td>
                     
                     {/* Source Params */}
                     <td>{r.sourceQtyKg || '-'}</td>
@@ -194,27 +264,35 @@ const MilkReceiptsList = () => {
                     <td>{r.sourceSnf || '-'}</td>
 
                     {/* Receipt Params */}
-                    <td className="fw-bold">{r.qtyKg}</td>
-                    <td>{r.fat}</td>
-                    <td>{r.clr}</td>
-                    <td>{r.snf}</td>
+                    <td className="fw-bold">{!isPending ? (r.qtyKg || '-') : '-'}</td>
+                    <td>{!isPending ? (r.fat || '-') : '-'}</td>
+                    <td>{!isPending ? (r.clr || '-') : '-'}</td>
+                    <td>{!isPending ? (r.snf || '-') : '-'}</td>
 
                     {/* Difference Params */}
-                    <td className={getDiffClass(diffQty)}>{diffQty !== 0 ? diffQty.toFixed(2) : '0.00'}</td>
-                    <td className={getDiffClass(diffFat)}>{diffFat !== 0 ? diffFat.toFixed(2) : '0.00'}</td>
-                    <td className={getDiffClass(diffClr)}>{diffClr !== 0 ? diffClr.toFixed(1) : '0.0'}</td>
-                    <td className={getDiffClass(diffSnf)}>{diffSnf !== 0 ? diffSnf.toFixed(2) : '0.00'}</td>
+                    <td className={!isPending ? getDiffClass(diffQty) : ''}>{!isPending && diffQty !== 0 ? diffQty.toFixed(2) : '-'}</td>
+                    <td className={!isPending ? getDiffClass(diffFat) : ''}>{!isPending && diffFat !== 0 ? diffFat.toFixed(2) : '-'}</td>
+                    <td className={!isPending ? getDiffClass(diffClr) : ''}>{!isPending && diffClr !== 0 ? diffClr.toFixed(1) : '-'}</td>
+                    <td className={!isPending ? getDiffClass(diffSnf) : ''}>{!isPending && diffSnf !== 0 ? diffSnf.toFixed(2) : '-'}</td>
 
                     <td>
                         <div className="d-flex">
-                            <Button variant="link" size="sm" className="p-0 me-2" onClick={() => handleEdit(r)}><FaEdit /></Button>
-                            <Button variant="link" size="sm" className="p-0 text-danger" onClick={() => handleDelete(r.id)}><FaTrash /></Button>
+                            {isPending ? (
+                                <Button variant="primary" size="sm" onClick={() => handleEdit(r)}>
+                                    Receive
+                                </Button>
+                            ) : (
+                                <>
+                                    <Button variant="link" size="sm" className="p-0 me-2" onClick={() => handleEdit(r)}><FaEdit /></Button>
+                                    <Button variant="link" size="sm" className="p-0 text-danger" onClick={() => handleDelete(r.id)}><FaTrash /></Button>
+                                </>
+                            )}
                         </div>
                     </td>
                     </tr>
                 );
               })}
-              {receipts.length === 0 && <tr><td colSpan="18" className="text-center">No receipts found</td></tr>}
+              {mergedList.length === 0 && <tr><td colSpan="19" className="text-center">No shipments found</td></tr>}
             </tbody>
           </Table>
         </Card.Body>

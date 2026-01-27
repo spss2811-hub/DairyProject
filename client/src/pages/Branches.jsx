@@ -6,7 +6,7 @@ import api from '../api';
 const Branches = () => {
   const [branches, setBranches] = useState([]);
   const [formData, setFormData] = useState({ 
-    branchCode: '', branchName: '', shortName: '', address: '', contactPerson: '', mobile: ''
+    branchCode: '', branchName: '', shortName: '', address: '', contactPerson: '', mobile: '', gstNo: ''
   });
   const [editId, setEditId] = useState(null);
   const codeInputRef = useRef(null);
@@ -51,7 +51,7 @@ const Branches = () => {
       } else {
         await api.post('/branches', formData);
       }
-      setFormData({ branchCode: '', branchName: '', shortName: '', address: '', contactPerson: '', mobile: '' });
+      setFormData({ branchCode: '', branchName: '', shortName: '', address: '', contactPerson: '', mobile: '', gstNo: '' });
       loadBranches();
       if (codeInputRef.current) codeInputRef.current.focus();
     } else {
@@ -67,7 +67,8 @@ const Branches = () => {
       shortName: branch.shortName || '',
       address: branch.address || '',
       contactPerson: branch.contactPerson || '',
-      mobile: branch.mobile || ''
+      mobile: branch.mobile || '',
+      gstNo: branch.gstNo || ''
     });
     if (codeInputRef.current) codeInputRef.current.focus();
   };
@@ -81,7 +82,7 @@ const Branches = () => {
 
   const handleCancelEdit = () => {
     setEditId(null);
-    setFormData({ branchCode: '', branchName: '', shortName: '', address: '', contactPerson: '', mobile: '' });
+    setFormData({ branchCode: '', branchName: '', shortName: '', address: '', contactPerson: '', mobile: '', gstNo: '' });
     if (codeInputRef.current) codeInputRef.current.focus();
   };
 
@@ -121,10 +122,20 @@ const Branches = () => {
                 placeholder="Short Name" 
                 value={formData.shortName} 
                 onChange={e => setFormData({...formData, shortName: e.target.value})} 
-                onKeyDown={(e) => handleKeyDown(e, 'contactPerson')}
+                onKeyDown={(e) => handleKeyDown(e, 'gstNo')}
               />
             </Col>
             <Col md={2}>
+              <Form.Label>GST No</Form.Label>
+              <Form.Control 
+                id="gstNo"
+                placeholder="GSTIN" 
+                value={formData.gstNo} 
+                onChange={e => setFormData({...formData, gstNo: e.target.value})} 
+                onKeyDown={(e) => handleKeyDown(e, 'contactPerson')}
+              />
+            </Col>
+            <Col md={3}>
               <Form.Label>Contact Person</Form.Label>
               <Form.Control 
                 id="contactPerson"
@@ -134,6 +145,8 @@ const Branches = () => {
                 onKeyDown={(e) => handleKeyDown(e, 'mobile')}
               />
             </Col>
+          </Row>
+          <Row className="mb-3">
             <Col md={3}>
               <Form.Label>Mobile</Form.Label>
               <Form.Control 
@@ -144,9 +157,7 @@ const Branches = () => {
                 onKeyDown={(e) => handleKeyDown(e, 'address')}
               />
             </Col>
-          </Row>
-          <Row className="mb-3">
-            <Col md={12}>
+            <Col md={9}>
               <Form.Label>Address</Form.Label>
               <Form.Control 
                 id="address"
@@ -179,6 +190,7 @@ const Branches = () => {
               <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Code</th>
               <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Name</th>
               <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Short Name</th>
+              <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">GST No</th>
               <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Contact Person</th>
               <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Mobile</th>
               <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Address</th>
@@ -191,6 +203,7 @@ const Branches = () => {
                 <td>{b.branchCode}</td>
                 <td>{b.branchName}</td>
                 <td>{b.shortName || '-'}</td>
+                <td>{b.gstNo || '-'}</td>
                 <td>{b.contactPerson}</td>
                 <td>{b.mobile}</td>
                 <td>{b.address}</td>

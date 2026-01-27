@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Button, Row, Col, Card } from 'react-bootstrap';
+import { Table, Form, Button, Row, Col, Card } from 'react-bootstrap';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FaList } from 'react-icons/fa';
 import api from '../api';
@@ -7,10 +7,14 @@ import api from '../api';
 const MilkReceipts = () => {
   const [branches, setBranches] = useState([]);
   const [entry, setEntry] = useState({
+    dispatchId: '',
     receivedByUnit: '',
+    receivedByUnitId: '',
     date: new Date().toISOString().split('T')[0],
     unitName: '',
+    sourceUnitId: '',
     tankerNo: '',
+    vehicleNo: '',
     dcNo: '',
     
     // Source Parameters
@@ -54,13 +58,18 @@ const MilkReceipts = () => {
     loadBranches();
     if (location.state && location.state.editEntry) {
         const item = location.state.editEntry;
-        setEditId(item.id);
-        setEntry({
+        setEditId(item.type === 'pending' ? null : item.id);
+        
+        const baseEntry = {
+            dispatchId: item.dispatchId || item.id || '',
             receivedByUnit: item.receivedByUnit || '',
-            date: item.date,
-            unitName: item.unitName,
-            tankerNo: item.tankerNo,
-            dcNo: item.dcNo,
+            receivedByUnitId: item.receivedByUnitId || '',
+            date: item.date || new Date().toISOString().split('T')[0],
+            unitName: item.unitName || item.sourceUnit || '',
+            sourceUnitId: item.sourceUnitId || '',
+            tankerNo: item.tankerNo || '',
+            vehicleNo: item.vehicleNo || '',
+            dcNo: item.dcNo || '',
             
             sourceFrontQtyKg: item.sourceFrontQtyKg || '',
             sourceFrontFat: item.sourceFrontFat || '',
@@ -87,14 +96,32 @@ const MilkReceipts = () => {
             backClr: item.backClr || '',
             backSnf: item.backSnf || '',
 
-            qtyKg: item.qtyKg,
-            qty: item.qty,
-            fat: item.fat,
-            clr: item.clr,
-            snf: item.snf
-        });
+            qtyKg: item.qtyKg || '',
+            qty: item.qty || '',
+            fat: item.fat || '',
+            clr: item.clr || '',
+            snf: item.snf || ''
+        };
+
+        // If it's a pending dispatch, pre-fill actual with source as a starting point
+        if (item.type === 'pending') {
+            baseEntry.frontQtyKg = item.sourceFrontQtyKg || '';
+            baseEntry.frontFat = item.sourceFrontFat || '';
+            baseEntry.frontClr = item.sourceFrontClr || '';
+            baseEntry.backQtyKg = item.sourceBackQtyKg || '';
+            baseEntry.backFat = item.sourceBackFat || '';
+            baseEntry.backClr = item.sourceBackClr || '';
+        }
+
+        setEntry(calculateValues(baseEntry));
     }
   }, [location.state]);
+
+  useEffect(() => {
+    if (entry.receivedByUnit && entry.unitName && !editId && !entry.dispatchId) {
+        fetchPendingDispatch();
+    }
+  }, [entry.receivedByUnit, entry.unitName]);
 
   const loadBranches = async () => {
     try {
@@ -102,6 +129,52 @@ const MilkReceipts = () => {
       setBranches(res.data);
     } catch (err) {
       console.error("Error loading branches:", err);
+    }
+  };
+
+  const fetchPendingDispatch = async () => {
+    try {
+        const res = await api.get('/milk-dispatches');
+        const pending = res.data.find(d => 
+            (d.dispatchedByUnit === entry.unitName || d.dispatchedByUnitId === entry.sourceUnitId) && 
+            (d.destinationUnit === entry.receivedByUnit || d.destinationUnitId === entry.receivedByUnitId) && 
+            (d.isInTransit === true || d.isInTransit === undefined)
+        );
+
+        if (pending) {
+            if (window.confirm(`Found an active dispatch from ${entry.unitName} with DC No: ${pending.dcNo}. Auto-fill details?`)) {
+                const updated = {
+                    ...entry,
+                    dispatchId: pending.id,
+                    tankerNo: pending.tankerNo || entry.tankerNo,
+                    vehicleNo: pending.vehicleNo || entry.vehicleNo,
+                    dcNo: pending.dcNo || entry.dcNo,
+                    sourceFrontQtyKg: pending.dispatchFrontQtyKg || '',
+                    sourceFrontFat: pending.dispatchFrontFat || '',
+                    sourceFrontClr: pending.dispatchFrontClr || '',
+                    sourceFrontSnf: pending.dispatchFrontSnf || '',
+                    sourceBackQtyKg: pending.dispatchBackQtyKg || '',
+                    sourceBackFat: pending.dispatchBackFat || '',
+                    sourceBackClr: pending.dispatchBackClr || '',
+                    sourceBackSnf: pending.dispatchBackSnf || '',
+                    sourceQtyKg: pending.dispatchQtyKg || '',
+                    sourceFat: pending.dispatchFat || '',
+                    sourceClr: pending.dispatchClr || '',
+                    sourceSnf: pending.dispatchSnf || '',
+                    
+                    // Pre-fill actual with source as starting point
+                    frontQtyKg: pending.dispatchFrontQtyKg || '',
+                    frontFat: pending.dispatchFrontFat || '',
+                    frontClr: pending.dispatchFrontClr || '',
+                    backQtyKg: pending.dispatchBackQtyKg || '',
+                    backFat: pending.dispatchBackFat || '',
+                    backClr: pending.dispatchBackClr || ''
+                };
+                setEntry(calculateValues(updated));
+            }
+        }
+    } catch (err) {
+        console.error("Error fetching pending dispatch:", err);
     }
   };
 
@@ -194,7 +267,17 @@ const MilkReceipts = () => {
   };
 
   const handleEntryChange = (field, value) => {
-    const updatedEntry = { ...entry, [field]: value };
+    let updatedEntry = { ...entry, [field]: value };
+    
+    if (field === 'receivedByUnit') {
+        const branch = branches.find(b => b.branchName === value);
+        if (branch) updatedEntry.receivedByUnitId = branch.id;
+    }
+    if (field === 'unitName') {
+        const branch = branches.find(b => b.branchName === value);
+        if (branch) updatedEntry.sourceUnitId = branch.id;
+    }
+
     setEntry(calculateValues(updatedEntry));
   };
 
@@ -216,16 +299,68 @@ const MilkReceipts = () => {
     }
 
     try {
+      const dispatchUpdateData = {
+        isInTransit: false,
+        destinationFrontQtyKg: entry.frontQtyKg,
+        destinationFrontFat: entry.frontFat,
+        destinationFrontClr: entry.frontClr,
+        destinationFrontSnf: entry.frontSnf,
+        destinationBackQtyKg: entry.backQtyKg,
+        destinationBackFat: entry.backFat,
+        destinationBackClr: entry.backClr,
+        destinationBackSnf: entry.backSnf,
+        destinationQtyKg: entry.qtyKg,
+        destinationFat: entry.fat,
+        destinationClr: entry.clr,
+        destinationSnf: entry.snf,
+        destinationQty: entry.qty
+      };
+
+      const updateDispatch = async (id) => {
+        try {
+            await api.put(`/milk-dispatches/${id}`, dispatchUpdateData);
+        } catch (err) {
+            console.error("Error updating source dispatch:", err);
+        }
+      };
+
       if (editId) {
         await api.put(`/milk-receipts/${editId}`, entry);
+        
+        // Also update dispatch if linked
+        if (entry.dispatchId) {
+            await updateDispatch(entry.dispatchId);
+        } else if (entry.dcNo) {
+            const dRes = await api.get('/milk-dispatches');
+            const matched = dRes.data.find(d => d.dcNo === entry.dcNo);
+            if (matched) await updateDispatch(matched.id);
+        }
+
         navigate('/milk-receipts-list');
       } else {
         await api.post('/milk-receipts', entry);
+        
+        // Mark dispatch as received and reflect data
+        let targetDispatchId = entry.dispatchId;
+        if (!targetDispatchId && entry.dcNo) {
+            try {
+                const dRes = await api.get('/milk-dispatches');
+                const matched = dRes.data.find(d => d.dcNo === entry.dcNo && (d.isInTransit === true || d.isInTransit === undefined));
+                if (matched) targetDispatchId = matched.id;
+            } catch (e) {}
+        }
+
+        if (targetDispatchId) {
+            await updateDispatch(targetDispatchId);
+        }
+
         alert("Receipt Saved!");
         setEntry(prev => ({
           ...prev,
+          dispatchId: '',
           unitName: '',
           tankerNo: '',
+          vehicleNo: '',
           dcNo: '',
           
           sourceFrontQtyKg: '',
@@ -330,6 +465,18 @@ const MilkReceipts = () => {
                 <Row>
                     <Col>
                         <Form.Group className="mb-2">
+                            <Form.Label>Vehicle No</Form.Label>
+                            <Form.Control 
+                                id="vehicleNo"
+                                type="text" 
+                                value={entry.vehicleNo} 
+                                onChange={e => handleEntryChange('vehicleNo', e.target.value)} 
+                                onKeyDown={(e) => handleKeyDown(e, 'tankerNo')}
+                            />
+                        </Form.Group>
+                    </Col>
+                    <Col>
+                        <Form.Group className="mb-2">
                             <Form.Label>Tanker No</Form.Label>
                             <Form.Control 
                                 id="tankerNo"
@@ -348,156 +495,142 @@ const MilkReceipts = () => {
                                 type="text" 
                                 value={entry.dcNo} 
                                 onChange={e => handleEntryChange('dcNo', e.target.value)} 
-                                onKeyDown={(e) => handleKeyDown(e, 'sourceFrontQtyKg')}
+                                onKeyDown={(e) => handleKeyDown(e, 'frontQtyKg')}
                             />
                         </Form.Group>
                     </Col>
                 </Row>
 
                 <hr className="my-3" />
-                <h6 className="text-muted mb-3">Source Unit Parameters (Challan)</h6>
+                <h6 className="text-muted mb-3">Shipment Parameters Comparison</h6>
                 
-                <Row className="mb-3">
-                   {/* Source Front */}
-                   <Col md={4} className="border-end">
-                     <h6 className="text-primary">Front Cell</h6>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Qty (Kg)</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.01" id="sourceFrontQtyKg" value={entry.sourceFrontQtyKg} onChange={e => handleEntryChange('sourceFrontQtyKg', e.target.value)} onKeyDown={e => handleKeyDown(e, 'sourceFrontFat')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Fat %</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="sourceFrontFat" value={entry.sourceFrontFat} onChange={e => handleEntryChange('sourceFrontFat', e.target.value)} onKeyDown={e => handleKeyDown(e, 'sourceFrontClr')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">CLR</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="sourceFrontClr" value={entry.sourceFrontClr} onChange={e => handleEntryChange('sourceFrontClr', e.target.value)} onKeyDown={e => handleKeyDown(e, 'sourceBackQtyKg')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">SNF %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.sourceFrontSnf} readOnly className="bg-light" />
-                     </Form.Group>
-                   </Col>
-                   
-                   {/* Source Back */}
-                   <Col md={4} className="border-end">
-                     <h6 className="text-primary">Back Cell</h6>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Qty (Kg)</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.01" id="sourceBackQtyKg" value={entry.sourceBackQtyKg} onChange={e => handleEntryChange('sourceBackQtyKg', e.target.value)} onKeyDown={e => handleKeyDown(e, 'sourceBackFat')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Fat %</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="sourceBackFat" value={entry.sourceBackFat} onChange={e => handleEntryChange('sourceBackFat', e.target.value)} onKeyDown={e => handleKeyDown(e, 'sourceBackClr')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">CLR</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="sourceBackClr" value={entry.sourceBackClr} onChange={e => handleEntryChange('sourceBackClr', e.target.value)} onKeyDown={e => handleKeyDown(e, 'frontQtyKg')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">SNF %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.sourceBackSnf} readOnly className="bg-light" />
-                     </Form.Group>
-                   </Col>
+                <Table bordered hover responsive size="sm" className="align-middle">
+                    <thead className="bg-light text-center small fw-bold">
+                        <tr>
+                            <th width="15%">Compartment</th>
+                            <th width="15%">Parameter</th>
+                            <th width="25%" className="bg-primary text-white">Source (Challan)</th>
+                            <th width="30%" className="bg-success text-white">Receipt (Actual)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {/* Front Cell */}
+                        <tr>
+                            <td rowSpan="4" className="text-center fw-bold bg-light">Front Cell</td>
+                            <td>Qty (Kg)</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceFrontQtyKg || '0.00'}</td>
+                            <td>
+                                <Form.Control size="sm" type="number" step="0.01" id="frontQtyKg" 
+                                    value={entry.frontQtyKg} 
+                                    onChange={e => handleEntryChange('frontQtyKg', e.target.value)} 
+                                    onKeyDown={e => handleKeyDown(e, 'frontFat')} 
+                                />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Fat %</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceFrontFat || '0.0'}</td>
+                            <td>
+                                <Form.Control size="sm" type="number" step="0.1" id="frontFat" 
+                                    value={entry.frontFat} 
+                                    onChange={e => handleEntryChange('frontFat', e.target.value)} 
+                                    onKeyDown={e => handleKeyDown(e, 'frontClr')} 
+                                />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>CLR</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceFrontClr || '0.0'}</td>
+                            <td>
+                                <Form.Control size="sm" type="number" step="0.1" id="frontClr" 
+                                    value={entry.frontClr} 
+                                    onChange={e => handleEntryChange('frontClr', e.target.value)} 
+                                    onKeyDown={e => handleKeyDown(e, 'backQtyKg')} 
+                                />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>SNF %</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceFrontSnf || '0.00'}</td>
+                            <td className="bg-light text-center fw-bold">{entry.frontSnf || '0.00'}</td>
+                        </tr>
 
-                   {/* Source Total */}
-                   <Col md={4}>
-                     <h6 className="text-secondary">Total (Calculated)</h6>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Total Qty (Kg)</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.sourceQtyKg} readOnly className="bg-light fw-bold" />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Avg Fat %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.sourceFat} readOnly className="bg-light" />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Avg CLR</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.sourceClr} readOnly className="bg-light" />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Avg SNF %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.sourceSnf} readOnly className="bg-light" />
-                     </Form.Group>
-                   </Col>
-                </Row>
+                        {/* Back Cell */}
+                        <tr>
+                            <td rowSpan="4" className="text-center fw-bold bg-light">Back Cell</td>
+                            <td>Qty (Kg)</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceBackQtyKg || '0.00'}</td>
+                            <td>
+                                <Form.Control size="sm" type="number" step="0.01" id="backQtyKg" 
+                                    value={entry.backQtyKg} 
+                                    onChange={e => handleEntryChange('backQtyKg', e.target.value)} 
+                                    onKeyDown={e => handleKeyDown(e, 'backFat')} 
+                                />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Fat %</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceBackFat || '0.0'}</td>
+                            <td>
+                                <Form.Control size="sm" type="number" step="0.1" id="backFat" 
+                                    value={entry.backFat} 
+                                    onChange={e => handleEntryChange('backFat', e.target.value)} 
+                                    onKeyDown={e => handleKeyDown(e, 'backClr')} 
+                                />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>CLR</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceBackClr || '0.0'}</td>
+                            <td>
+                                <Form.Control size="sm" type="number" step="0.1" id="backClr" 
+                                    value={entry.backClr} 
+                                    onChange={e => handleEntryChange('backClr', e.target.value)} 
+                                    onKeyDown={e => handleKeyDown(e, 'submit-btn')} 
+                                />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>SNF %</td>
+                            <td className="text-end pe-3 bg-light">{entry.sourceBackSnf || '0.00'}</td>
+                            <td className="bg-light text-center fw-bold">{entry.backSnf || '0.00'}</td>
+                        </tr>
 
-                <hr className="my-3" />
-                <h6 className="text-muted mb-3">Receipt Parameters (Actual Received)</h6>
-
-                <Row className="mb-3">
-                   {/* Receipt Front */}
-                   <Col md={4} className="border-end">
-                     <h6 className="text-success">Front Cell</h6>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Qty (Kg)</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.01" id="frontQtyKg" value={entry.frontQtyKg} onChange={e => handleEntryChange('frontQtyKg', e.target.value)} onKeyDown={e => handleKeyDown(e, 'frontFat')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Fat %</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="frontFat" value={entry.frontFat} onChange={e => handleEntryChange('frontFat', e.target.value)} onKeyDown={e => handleKeyDown(e, 'frontClr')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">CLR</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="frontClr" value={entry.frontClr} onChange={e => handleEntryChange('frontClr', e.target.value)} onKeyDown={e => handleKeyDown(e, 'backQtyKg')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">SNF %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.frontSnf} readOnly className="bg-light" />
-                     </Form.Group>
-                   </Col>
-                   
-                   {/* Receipt Back */}
-                   <Col md={4} className="border-end">
-                     <h6 className="text-success">Back Cell</h6>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Qty (Kg)</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.01" id="backQtyKg" value={entry.backQtyKg} onChange={e => handleEntryChange('backQtyKg', e.target.value)} onKeyDown={e => handleKeyDown(e, 'backFat')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Fat %</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="backFat" value={entry.backFat} onChange={e => handleEntryChange('backFat', e.target.value)} onKeyDown={e => handleKeyDown(e, 'backClr')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">CLR</Form.Label>
-                        <Form.Control size="sm" type="number" step="0.1" id="backClr" value={entry.backClr} onChange={e => handleEntryChange('backClr', e.target.value)} onKeyDown={e => handleKeyDown(e, 'submit-btn')} />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">SNF %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.backSnf} readOnly className="bg-light" />
-                     </Form.Group>
-                   </Col>
-
-                   {/* Receipt Total */}
-                   <Col md={4}>
-                     <h6 className="text-secondary">Total (Calculated)</h6>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Total Qty (Kg)</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.qtyKg} readOnly className="bg-light fw-bold" />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Avg Fat %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.fat} readOnly className="bg-light" />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Avg CLR</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.clr} readOnly className="bg-light" />
-                     </Form.Group>
-                     <Form.Group className="mb-2">
-                        <Form.Label className="small">Avg SNF %</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.snf} readOnly className="bg-light" />
-                     </Form.Group>
-                     <Form.Group className="mb-2 mt-3">
-                        <Form.Label className="small">Total Liters</Form.Label>
-                        <Form.Control size="sm" type="number" value={entry.qty} readOnly className="bg-light" />
-                     </Form.Group>
-                   </Col>
-                </Row>
+                        {/* Totals */}
+                        <tr className="table-secondary">
+                            <td rowSpan="5" className="text-center fw-bold">TOTAL</td>
+                            <td className="fw-bold">Total Qty (Kg)</td>
+                            <td className="text-end pe-3 fw-bold">{entry.sourceQtyKg || '0.00'}</td>
+                            <td className="text-center fw-bold">{entry.qtyKg || '0.00'}</td>
+                        </tr>
+                        <tr className="table-secondary">
+                            <td>Avg Fat %</td>
+                            <td className="text-end pe-3">{entry.sourceFat || '0.0'}</td>
+                            <td className="text-center">{entry.fat || '0.0'}</td>
+                        </tr>
+                        <tr className="table-secondary">
+                            <td>Avg CLR</td>
+                            <td className="text-end pe-3">{entry.sourceClr || '0.0'}</td>
+                            <td className="text-center">{entry.clr || '0.0'}</td>
+                        </tr>
+                        <tr className="table-secondary">
+                            <td>Avg SNF %</td>
+                            <td className="text-end pe-3">{entry.sourceSnf || '0.00'}</td>
+                            <td className="text-center">{entry.snf || '0.00'}</td>
+                        </tr>
+                        <tr className="table-info">
+                            <td className="fw-bold">Total Liters</td>
+                            <td className="text-center">-</td>
+                            <td className="text-center fw-bold text-primary" style={{fontSize: '1.1rem'}}>{entry.qty || '0.00'}</td>
+                        </tr>
+                    </tbody>
+                </Table>
                 
-                <div className="d-grid gap-2 mt-3">
+                <div className="d-grid gap-2 mt-4">
                   <Button 
                     id="submit-btn" 
                     variant="primary" 
+                    size="lg"
                     type="submit"
                   >
                     {editId ? 'Update Receipt' : 'Save Receipt'}

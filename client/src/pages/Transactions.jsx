@@ -76,7 +76,7 @@ const Transactions = () => {
         else if (hType === 'Fixed Assets' || hType === 'Current Assets') updatedType = 'debit_asset';
         else if (hType === 'Sundry Debtors') updatedType = 'credit_receivable';
         else if (hType === 'Sundry Creditors') updatedType = 'debit_payable';
-        else if (hType === 'Loans (Liability)' || hType === 'Current Liabilities' || hType === 'Duties & Taxes' || hType === 'Provisions') updatedType = 'debit_liability';
+        else if (hType === 'Loans (Liability)' || hType === 'Current Liabilities' || hType === 'Duties & Taxes' || hType === 'Payables(provisions)') updatedType = 'debit_liability';
         else if (hType === 'Capital Account') updatedType = 'credit_equity';
         else if (hType === 'Bank Accounts' || hType === 'Contra Entry') updatedType = 'debit_contra';
         else if (hType === 'Suspense A/c') updatedType = 'debit';

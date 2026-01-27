@@ -3,9 +3,9 @@ import { Table, Button, Form, Row, Col, Card } from 'react-bootstrap';
 import { FaEdit, FaTrash, FaList } from 'react-icons/fa';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../api';
-import { generateBillPeriods, getBillPeriodName } from '../utils';
+import { generateBillPeriods } from '../utils';
 
-const Section = ({ title, type, items, farmers, selectedBillPeriod, onRefresh, colorClass, bgClass, options, billPeriods, basePeriods, editItem, onCancelEdit }) => {
+const Section = ({ title, type, items, farmers, selectedBillPeriod, onRefresh, bgClass, options, editItem, onCancelEdit }) => {
   const [formData, setFormData] = useState({ 
     headName: '', defaultValue: '', farmerId: '', description: '', details: ''
   });
@@ -54,7 +54,6 @@ const Section = ({ title, type, items, farmers, selectedBillPeriod, onRefresh, c
     return f ? f.village : '-';
   };
   
-  // Filter items to show a small preview of last 5 for THIS period and type
   const previewItems = items.filter(i => i.billPeriod === selectedBillPeriod).slice(-5).reverse();
 
   return (
@@ -80,14 +79,10 @@ const Section = ({ title, type, items, farmers, selectedBillPeriod, onRefresh, c
             
             <Col md={6} className="mb-2">
               <Form.Label className="small fw-bold">Head Name</Form.Label>
-              {options ? (
-                <Form.Select size="sm" value={formData.headName} onChange={e => setFormData({...formData, headName: e.target.value})}>
-                  <option value="">Select Head</option>
-                  {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </Form.Select>
-              ) : (
-                <Form.Control size="sm" placeholder="Name" value={formData.headName} onChange={e => setFormData({...formData, headName: e.target.value})} />
-              )}
+              <Form.Select size="sm" value={formData.headName} onChange={e => setFormData({...formData, headName: e.target.value})}>
+                <option value="">Select Head</option>
+                {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </Form.Select>
             </Col>
 
             <Col md={6} className="mb-2">
@@ -146,18 +141,17 @@ const AdditionsDeductions = () => {
   const [items, setItems] = useState([]);
   const [farmers, setFarmers] = useState([]);
   const [billPeriods, setBillPeriods] = useState([]);
-  const [basePeriods, setBasePeriods] = useState([]);
   const [selectedBillPeriod, setSelectedBillPeriod] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
   const [editItem, setEditItem] = useState(null);
-  const [accountHeads, setAccountHeads] = useState([]);
+  const [customHeads, setCustomHeads] = useState([]);
 
   useEffect(() => {
     loadItems();
     loadFarmers();
     loadBillPeriods();
-    loadAccountHeads();
+    loadCustomHeads();
 
     if (location.state && location.state.editItem) {
         const item = location.state.editItem;
@@ -176,12 +170,12 @@ const AdditionsDeductions = () => {
     setFarmers(res.data);
   };
 
-  const loadAccountHeads = async () => {
+  const loadCustomHeads = async () => {
     try {
-      const res = await api.get('/account-heads');
-      setAccountHeads(res.data);
+      const res = await api.get('/add-deduct-heads');
+      setCustomHeads(res.data);
     } catch (err) {
-      console.error("Error loading account heads:", err);
+      console.error("Error loading custom heads:", err);
     }
   };
 
@@ -191,7 +185,6 @@ const AdditionsDeductions = () => {
             api.get('/bill-periods'),
             api.get('/locked-periods')
           ]);
-          setBasePeriods(bpRes.data);
           
           const extraIds = [...new Set([
               selectedBillPeriod,
@@ -208,10 +201,16 @@ const AdditionsDeductions = () => {
   const additions = items.filter(i => i.type === 'Addition');
   const deductions = items.filter(i => i.type === 'Deduction');
 
-  const additionOptions = accountHeads.filter(h => h.type === 'Income').map(h => h.headName);
+  const additionOptions = customHeads
+    .filter(h => h.type === 'Addition')
+    .map(h => h.name)
+    .sort((a, b) => a.localeCompare(b));
   if (!additionOptions.includes('Others')) additionOptions.push('Others');
   
-  const deductionOptions = accountHeads.filter(h => h.type === 'Expense').map(h => h.headName);
+  const deductionOptions = customHeads
+    .filter(h => h.type === 'Deduction')
+    .map(h => h.name)
+    .sort((a, b) => a.localeCompare(b));
   if (!deductionOptions.includes('Others')) deductionOptions.push('Others');
 
   return (
@@ -250,11 +249,8 @@ const AdditionsDeductions = () => {
                 type="Addition" 
                 items={additions} 
                 farmers={farmers} 
-                billPeriods={billPeriods}
-                basePeriods={basePeriods}
                 selectedBillPeriod={selectedBillPeriod}
                 onRefresh={loadItems}
-                colorClass="text-success"
                 bgClass="bg-success"
                 options={additionOptions}
                 editItem={editItem}
@@ -267,11 +263,8 @@ const AdditionsDeductions = () => {
                 type="Deduction" 
                 items={deductions} 
                 farmers={farmers} 
-                billPeriods={billPeriods}
-                basePeriods={basePeriods}
                 selectedBillPeriod={selectedBillPeriod}
                 onRefresh={loadItems}
-                colorClass="text-danger"
                 bgClass="bg-danger"
                 options={deductionOptions}
                 editItem={editItem}

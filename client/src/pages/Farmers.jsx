@@ -288,16 +288,15 @@ const Farmers = () => {
 
   const downloadTemplate = () => {
     const template = [{
-      'Code': '101', 'Name': 'John Doe', 'Mobile': '9876543210', 'Village': 'Sample Village',
-      'Category': 'Farmer', 'Rate Method': 'KgF', 'Branch': 'Main Branch', 'Route': 'Route 1',
-      'Extra Rate': 0.5, 'Extra Method': 'KgF', 'Extra From Date': '2024-01-01', 'Extra From Shift': 'AM', 'Extra To Date': '2025-01-01', 'Extra To Shift': 'PM',
-      'Cartage Amt': 10, 'Cartage Type': 'kg_fat', 'Cartage From Date': '2024-01-01', 'Cartage From Shift': 'AM', 'Cartage To Date': '2025-01-01', 'Cartage To Shift': 'PM',
-      'Fat Inc Thr': 4.0, 'Fat Inc Rate': 0.1, 'Fat Inc From Date': '2024-01-01', 'Fat Inc To Date': '2025-01-01',
-      'Fat Ded Thr': 3.5, 'Fat Ded Rate': 0.1, 'Fat Ded From Date': '2024-01-01', 'Fat Ded To Date': '2025-01-01',
-      'SNF Inc Thr': 8.5, 'SNF Inc Rate': 0.1, 'SNF Inc From Date': '2024-01-01', 'SNF Inc To Date': '2025-01-01',
-      'SNF Ded Thr': 8.0, 'SNF Ded Rate': 0.1, 'SNF Ded From Date': '2024-01-01', 'SNF Ded To Date': '2025-01-01',
-      'Qty Inc Thr': 100, 'Qty Inc Method': 'Ltr', 'Qty Inc Rate': 0.5, 'Qty Inc From Date': '2024-01-01', 'Qty Inc To Date': '2025-01-01',
-      'A/c Holder': 'John Doe', 'Bank': 'SBI', 'Bank Branch': 'City Branch', 'A/c Number': '1234567890', 'IFSC': 'SBIN0001234'
+      'Branch': 'Main Branch',
+      'Code': '101', 
+      'Name': 'John Doe', 
+      'Mobile': '9876543210', 
+      'Village': 'Sample Village',
+      'Bank': 'SBI', 
+      'Bank Branch': 'City Branch', 
+      'A/c Number': '1234567890', 
+      'IFSC': 'SBIN0001234'
     }];
     const ws = XLSX.utils.json_to_sheet(template);
     const wb = XLSX.utils.book_new();
@@ -334,7 +333,26 @@ const Farmers = () => {
                     ref={branchRef}
                     name="branchId" 
                     value={formData.branchId} 
-                    onChange={handleChange}
+                    onChange={(e) => {
+                        const newBranchId = e.target.value;
+                        let newCode = formData.code;
+
+                        // Auto-increment code logic only for new entries
+                        if (!editId && newBranchId) {
+                            const branchFarmers = farmers.filter(f => String(f.branchId) === String(newBranchId));
+                            if (branchFarmers.length > 0) {
+                                const maxCode = branchFarmers.reduce((max, f) => {
+                                    const codeNum = parseInt(f.code, 10);
+                                    return !isNaN(codeNum) && codeNum > max ? codeNum : max;
+                                }, 0);
+                                newCode = (maxCode + 1).toString();
+                            } else {
+                                newCode = '1';
+                            }
+                        }
+
+                        setFormData(prev => ({ ...prev, branchId: newBranchId, code: newCode }));
+                    }}
                     onKeyDown={(e) => handleKeyDown(e, 'f-routeId')}
                 >
                     <option value="">Select Branch</option>

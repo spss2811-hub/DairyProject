@@ -351,11 +351,43 @@ app.post('/farmers/bulk', (req, res) => {
 
 app.get('/customers', (req, res) => res.json(db.get('customers').value() || []));
 app.post('/customers', (req, res) => {
-    const customer = { ...req.body, id: Date.now().toString() };
-    db.get('customers').push(customer).write();
-    res.json(customer);
+    const existing = db.get('customers').find({ customerId: req.body.customerId }).value();
+    if (existing) {
+        return res.status(400).json({ error: 'Customer ID already exists' });
+    }
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('customers').push(item).write();
+    res.json(item);
+});
+app.post('/customers/bulk', (req, res) => {
+    const entries = req.body;
+    if (!Array.isArray(entries)) return res.status(400).json({ error: 'Invalid data format' });
+    
+    const existingIds = new Set(db.get('customers').map('customerId').value());
+    const timestamp = Date.now();
+    let importedCount = 0;
+    let skippedCount = 0;
+
+    entries.forEach((e, i) => {
+        if (existingIds.has(String(e.customerId))) {
+            skippedCount++;
+        } else {
+            const newItem = { ...e, id: (timestamp + i).toString() };
+            db.get('customers').push(newItem).write();
+            existingIds.add(String(e.customerId));
+            importedCount++;
+        }
+    });
+    
+    res.json({ imported: importedCount, skipped: skippedCount });
 });
 app.put('/customers/:id', (req, res) => {
+    if (req.body.customerId) {
+        const existing = db.get('customers').find({ customerId: req.body.customerId }).value();
+        if (existing && existing.id !== req.params.id) {
+            return res.status(400).json({ error: 'Customer ID already exists' });
+        }
+    }
     db.get('customers').find({ id: req.params.id }).assign(req.body).write();
     res.json(db.get('customers').find({ id: req.params.id }).value());
 });
@@ -804,6 +836,95 @@ app.put('/opening-balances/:id', (req, res) => {
 app.delete('/opening-balances/:id', (req, res) => {
     db.get('openingBalances').remove({ id: req.params.id }).write();
     res.json({ message: 'Deleted' });
+});
+
+app.get('/account-categories', (req, res) => res.json(db.get('accountCategories').value() || []));
+app.post('/account-categories', (req, res) => {
+    if (!db.has('accountCategories').value()) {
+        db.set('accountCategories', []).write();
+    }
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('accountCategories').push(item).write();
+    res.json(item);
+});
+app.put('/account-categories/:id', (req, res) => {
+    db.get('accountCategories').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('accountCategories').find({ id: req.params.id }).value());
+});
+app.delete('/account-categories/:id', (req, res) => {
+    db.get('accountCategories').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
+app.get('/add-deduct-heads', (req, res) => res.json(db.get('addDeductHeads').value() || []));
+app.post('/add-deduct-heads', (req, res) => {
+    if (!db.has('addDeductHeads').value()) {
+        db.set('addDeductHeads', []).write();
+    }
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('addDeductHeads').push(item).write();
+    res.json(item);
+});
+app.put('/add-deduct-heads/:id', (req, res) => {
+    db.get('addDeductHeads').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('addDeductHeads').find({ id: req.params.id }).value());
+});
+app.delete('/add-deduct-heads/:id', (req, res) => {
+    db.get('addDeductHeads').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
+// Financial Budgets
+app.get('/financial-budgets', (req, res) => res.json(db.get('financialBudgets').value() || []));
+app.post('/financial-budgets', (req, res) => {
+    if (!db.has('financialBudgets').value()) db.set('financialBudgets', []).write();
+    const item = { ...req.body, id: Date.now().toString() };
+    db.get('financialBudgets').push(item).write();
+    res.json(item);
+});
+app.post('/financial-budgets/bulk', (req, res) => {
+    if (!db.has('financialBudgets').value()) db.set('financialBudgets', []).write();
+    const entries = req.body;
+    const timestamp = Date.now();
+    entries.forEach((e, i) => {
+        const existing = db.get('financialBudgets').find({ 
+            branchId: e.branchId, year: e.year, month: e.month, categoryId: e.categoryId 
+        }).value();
+        if (existing) {
+            db.get('financialBudgets').find({ id: existing.id }).assign(e).write();
+        } else {
+            db.get('financialBudgets').push({ ...e, id: (timestamp + i).toString() }).write();
+        }
+    });
+    res.json({ success: true, count: entries.length });
+});
+app.put('/financial-budgets/:id', (req, res) => {
+    db.get('financialBudgets').find({ id: req.params.id }).assign(req.body).write();
+    res.json(db.get('financialBudgets').find({ id: req.params.id }).value());
+});
+app.delete('/financial-budgets/:id', (req, res) => {
+    db.get('financialBudgets').remove({ id: req.params.id }).write();
+    res.json({ message: 'Deleted' });
+});
+
+// Procurement Projections
+app.get('/procurement-projections', (req, res) => res.json(db.get('procurementProjections').value() || []));
+app.post('/procurement-projections/bulk', (req, res) => {
+    if (!db.has('procurementProjections').value()) db.set('procurementProjections', []).write();
+    const entries = req.body; // Array of projections for a year/unit
+    const timestamp = Date.now();
+    entries.forEach((e, i) => {
+        // Find existing for same year, month, unit, period and update, or push new
+        const existing = db.get('procurementProjections').find({ 
+            year: e.year, month: e.month, branchId: e.branchId, basePeriodId: e.basePeriodId 
+        }).value();
+        if (existing) {
+            db.get('procurementProjections').find({ id: existing.id }).assign(e).write();
+        } else {
+            db.get('procurementProjections').push({ ...e, id: (timestamp + i).toString() }).write();
+        }
+    });
+    res.json({ success: true, count: entries.length });
 });
 
 app.use((err, req, res, next) => {

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Table, Button, Form, Row, Col, Card } from 'react-bootstrap';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FaList } from 'react-icons/fa';
+import { FaList, FaDownload, FaUpload } from 'react-icons/fa';
 import api from '../api';
+import * as XLSX from 'xlsx';
 
 const Customers = () => {
   const [customers, setCustomers] = useState([]);
@@ -11,6 +12,7 @@ const Customers = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [editId, setEditId] = useState(null);
+  const fileInputRef = useRef(null);
 
   const initialCustomer = {
     customerId: '',
@@ -20,6 +22,7 @@ const Customers = () => {
     address: '',
     mobile: '',
     alternateMobile: '',
+    gstNo: '',
     saleRate: '',
     scheduleQty: '',
     saleRateMethod: 'Qnty per Liter', // Default method
@@ -34,7 +37,7 @@ const Customers = () => {
     if (location.state && location.state.editCustomer) {
         const c = location.state.editCustomer;
         setEditId(c.id);
-        setNewCustomer({ 
+        setNewCustomer({
             ...initialCustomer, 
             ...c, 
             category: c.category || 'Counter',
@@ -137,6 +140,7 @@ const Customers = () => {
         }
       } catch (error) {
         console.error("Error saving customer", error);
+        alert("Error: " + (error.response?.data?.error || error.message));
       }
     }
     else {
@@ -150,15 +154,103 @@ const Customers = () => {
       navigate('/customer-list');
   };
 
+  const downloadTemplate = () => {
+    const template = [{
+      'Customer ID': '101',
+      'Name': 'John Doe',
+      'Category': 'Counter', // Counter, Door Delivery, Retailer, etc.
+      'Delivery Boy': 'Boy Name', // Optional
+      'Place': 'City Center',
+      'Address': '123 Main St',
+      'Mobile': '9876543210',
+      'Alt Mobile': '',
+      'Schedule Qty': 5.0,
+      'Branches': 'Main Branch, City Branch' // Comma separated names
+    }];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Customers");
+    XLSX.writeFile(wb, "Customer_Import_Template.xlsx");
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        const processedData = data.map(row => {
+            // Find Delivery Boy ID
+            const dbName = row['Delivery Boy'];
+            const foundDB = deliveryBoys.find(db => db.name === dbName);
+            
+            // Map Branch Names to IDs
+            const branchNames = row['Branches'] ? row['Branches'].split(',').map(s => s.trim()) : [];
+            const assignedIds = branches
+                .filter(b => branchNames.includes(b.branchName))
+                .map(b => String(b.id));
+
+            return {
+                ...initialCustomer,
+                customerId: row['Customer ID']?.toString() || '',
+                name: row['Name'] || '',
+                category: row['Category'] || 'Counter',
+                deliveryBoyId: foundDB ? foundDB.id : '',
+                place: row['Place'] || '',
+                address: row['Address'] || '',
+                mobile: row['Mobile']?.toString() || '',
+                alternateMobile: row['Alt Mobile']?.toString() || '',
+                scheduleQty: parseFloat(row['Schedule Qty']) || '',
+                assignedBranches: assignedIds
+            };
+        });
+
+        const validData = processedData.filter(c => c.customerId && c.name && c.mobile);
+
+        if (validData.length === 0) {
+            alert("No valid rows found. Ensure Customer ID, Name, and Mobile are present.");
+            return;
+        }
+
+        const res = await api.post('/customers/bulk', validData);
+        alert(`Import Complete!\nImported: ${res.data.imported}\nSkipped (Duplicates): ${res.data.skipped}`);
+        navigate('/customer-list');
+
+      } catch (err) {
+        alert(`Import failed: ${err.response?.data?.error || err.message}`);
+        console.error("Import Error:", err);
+      } finally {
+        e.target.value = null;
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="mb-0">
           {newCustomer.category === 'Door Delivery' ? 'Door Deliver Customers' : 'Customer Master'}
         </h2>
-        <Button variant="outline-success" onClick={() => navigate('/customer-list')}>
-            <FaList className="me-2" /> Customer List
-        </Button>
+        <div className="d-flex gap-2">
+            <Button variant="outline-success" onClick={() => navigate('/customer-list')}> 
+                <FaList className="me-2" /> Customer List
+            </Button>
+            <Button variant="outline-primary" onClick={downloadTemplate}>
+                <FaDownload className="me-2" /> Template
+            </Button>
+            <Button variant="primary" onClick={() => fileInputRef.current.click()}>
+                <FaUpload className="me-2" /> Import Excel
+            </Button>
+            <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={handleFileUpload} />
+        </div>
       </div>
       
       <Card className="mb-4 shadow-sm">
@@ -275,6 +367,16 @@ const Customers = () => {
                 placeholder="Alternate Contact" 
                 value={newCustomer.alternateMobile} 
                 onChange={e => setNewCustomer({...newCustomer, alternateMobile: e.target.value})} 
+                onKeyDown={(e) => handleKeyDown(e, 'c-gst')}
+              />
+            </Col>
+            <Col md={3}>
+              <Form.Label className="small fw-bold">GST No</Form.Label>
+              <Form.Control 
+                id="c-gst"
+                placeholder="GSTIN" 
+                value={newCustomer.gstNo} 
+                onChange={e => setNewCustomer({...newCustomer, gstNo: e.target.value})} 
                 onKeyDown={(e) => handleKeyDown(e, 'select-all-branches')}
               />
             </Col>

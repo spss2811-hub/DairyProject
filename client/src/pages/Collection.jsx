@@ -8,14 +8,17 @@ import { formatCurrency, getBillPeriodForDate, generateBillPeriods, getBillPerio
 
 const Collection = () => {
   const [farmers, setFarmers] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [collections, setCollections] = useState([]); // Keep for 'Recent' view
+  const [allCollections, setAllCollections] = useState([]); // Keep all for summary
   const [billPeriods, setBillPeriods] = useState([]);
   const [generatedPeriods, setGeneratedPeriods] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
 
+  const [selectedBranch, setSelectedBranch] = useState('');
   const [entry, setEntry] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: '',
     shift: 'AM',
     farmerId: '',
     qtyKg: '',
@@ -29,9 +32,18 @@ const Collection = () => {
   const [lastEntry, setLastEntry] = useState(null);
   const [editId, setEditId] = useState(null);
   const fileInputRef = useRef(null);
+  
+  const [summary, setSummary] = useState({
+    count: 0,
+    qtyKg: 0,
+    kgFat: 0,
+    kgSnf: 0,
+    avgFat: 0,
+    avgSnf: 0
+  });
 
   useEffect(() => {
-    loadFarmers();
+    loadInitialData();
     loadCollections();
     loadBillPeriods();
 
@@ -50,18 +62,44 @@ const Collection = () => {
             kgFat: item.kgFat,
             kgSnf: item.kgSnf
         });
+        // Find farmer to set branch
+        // We will do this after farmers are loaded
     }
   }, [location.state]);
 
-  const loadFarmers = async () => {
-    const res = await api.get('/farmers');
-    setFarmers(res.data);
+  // Set branch when editing
+  useEffect(() => {
+      if (editId && farmers.length > 0 && entry.farmerId) {
+          const f = farmers.find(farm => farm.id === entry.farmerId);
+          if (f && f.branchId) {
+              setSelectedBranch(f.branchId);
+          }
+      }
+  }, [editId, farmers, entry.farmerId]);
+
+  // Recalculate summary whenever entry date/shift or collections change
+  useEffect(() => {
+      calculateSummary();
+  }, [entry.date, entry.shift, allCollections, selectedBranch]);
+
+  const loadInitialData = async () => {
+    try {
+        const [fRes, bRes] = await Promise.all([
+            api.get('/farmers'),
+            api.get('/branches')
+        ]);
+        setFarmers(fRes.data);
+        setBranches(bRes.data);
+    } catch (err) {
+        console.error("Error loading initial data:", err);
+    }
   };
 
   const loadCollections = async () => {
     try {
       const res = await api.get('/collections');
       if (res.data && Array.isArray(res.data)) {
+        setAllCollections(res.data); // Store all
         const sorted = [...res.data].sort((a, b) => {
             const dateComp = b.date.localeCompare(a.date);
             if (dateComp !== 0) return dateComp;
@@ -72,6 +110,39 @@ const Collection = () => {
     } catch (err) {
       console.error("Error loading collections:", err);
     }
+  };
+
+  const calculateSummary = () => {
+      if (!entry.date) {
+          setSummary({ count: 0, qtyKg: 0, kgFat: 0, kgSnf: 0, avgFat: 0, avgSnf: 0 });
+          return;
+      }
+
+      let filtered = allCollections.filter(c => c.date === entry.date && c.shift === entry.shift);
+      
+      // Filter by selected branch if available
+      if (selectedBranch) {
+          const branchFarmerIds = farmers
+            .filter(f => String(f.branchId) === String(selectedBranch))
+            .map(f => String(f.id));
+          filtered = filtered.filter(c => branchFarmerIds.includes(String(c.farmerId)));
+      }
+      
+      const totalQtyKg = filtered.reduce((sum, c) => sum + (parseFloat(c.qtyKg) || 0), 0);
+      const totalKgFat = filtered.reduce((sum, c) => sum + (parseFloat(c.kgFat) || 0), 0);
+      const totalKgSnf = filtered.reduce((sum, c) => sum + (parseFloat(c.kgSnf) || 0), 0);
+
+      const avgFat = totalQtyKg > 0 ? (totalKgFat / totalQtyKg) * 100 : 0;
+      const avgSnf = totalQtyKg > 0 ? (totalKgSnf / totalQtyKg) * 100 : 0;
+
+      setSummary({
+          count: filtered.length,
+          qtyKg: totalQtyKg,
+          kgFat: totalKgFat,
+          kgSnf: totalKgSnf,
+          avgFat: avgFat,
+          avgSnf: avgSnf
+      });
   };
 
   const loadBillPeriods = async () => {
@@ -129,13 +200,20 @@ const Collection = () => {
         kgFat: item.kgFat,
         kgSnf: item.kgSnf
     });
+    
+    // Set unit based on farmer
+    const f = farmers.find(farm => farm.id === item.farmerId);
+    if (f && f.branchId) {
+        setSelectedBranch(f.branchId);
+    }
+    
     setLastEntry(null);
   };
 
   const handleCancelEdit = () => {
     setEditId(null);
     setEntry({
-        date: new Date().toISOString().split('T')[0],
+        date: '',
         shift: 'AM',
         farmerId: '',
         qtyKg: '',
@@ -146,6 +224,7 @@ const Collection = () => {
         kgFat: '',
         kgSnf: ''
     });
+    // Do not reset branch unless navigating away or explicitly needed
     if (location.state && location.state.editEntry) navigate('/collection-list');
   };
 
@@ -181,7 +260,7 @@ const Collection = () => {
       setLastEntry(res.data);
       loadCollections();
       
-      setEntry({ 
+      setEntry({
         ...entry, 
         farmerId: '', qtyKg: '', qty: '', fat: '', clr: '', snf: '', kgFat: '', kgSnf: '' 
       });
@@ -195,9 +274,21 @@ const Collection = () => {
     }
   };
 
-  const getFarmerName = (id) => {
+  const getUnitName = (farmerId) => {
+      const f = farmers.find(farm => farm.id === farmerId);
+      if (!f || !f.branchId) return '-';
+      const b = branches.find(branch => String(branch.id) === String(f.branchId));
+      return b ? (b.shortName || b.branchName) : '-';
+  };
+
+  const getFarmerCode = (id) => {
       const f = farmers.find(farm => farm.id === id);
-      return f ? f.name : id;
+      return f ? f.code : id;
+  };
+
+  const getFarmerVillage = (id) => {
+      const f = farmers.find(farm => farm.id === id);
+      return f ? f.village : '-';
   };
 
   const getBillPeriodName = (dateStr) => {
@@ -354,12 +445,43 @@ const Collection = () => {
     reader.readAsBinaryString(file);
   };
 
+  // Filter farmers by selected branch
+  const filteredFarmers = selectedBranch 
+    ? farmers.filter(f => String(f.branchId) === String(selectedBranch)) 
+    : farmers;
+
+  const renderSummary = () => {
+      if (!entry.date) return null;
+      return (
+        <Row className="mb-3">
+            <Col md={12}>
+                <div className="d-flex flex-wrap gap-2 px-3 py-2 bg-info bg-opacity-10 border border-info rounded align-items-center justify-content-between">
+                    <span className="small fw-bold text-primary">Shift Summary ({formatDate(entry.date)} {entry.shift})</span>
+                    <div className="d-flex gap-3 small">
+                        <span><strong>{summary.count}</strong> Entries</span>
+                        <span className="text-secondary">|</span>
+                        <span><strong>{summary.qtyKg.toFixed(2)}</strong> Kg Qty</span>
+                        <span className="text-secondary">|</span>
+                        <span><strong>{summary.kgFat.toFixed(3)}</strong> Kg Fat</span>
+                        <span className="text-secondary">|</span>
+                        <span><strong>{summary.kgSnf.toFixed(3)}</strong> Kg SNF</span>
+                        <span className="text-secondary">|</span>
+                        <span><strong>{summary.avgFat.toFixed(2)}</strong> Avg Fat%</span>
+                        <span className="text-secondary">|</span>
+                        <span><strong>{summary.avgSnf.toFixed(2)}</strong> Avg SNF%</span>
+                    </div>
+                </div>
+            </Col>
+        </Row>
+      );
+  };
+
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h2 className="mb-0">Milk Collection</h2>
         <div className="d-flex gap-2">
-            <Button variant="outline-success" size="sm" onClick={() => navigate('/collection-list')}>
+            <Button variant="outline-success" size="sm" onClick={() => navigate('/collection-list')}> 
                 <FaList className="me-1" /> Collection List
             </Button>
             <Button variant="outline-primary" size="sm" onClick={downloadTemplate}>
@@ -388,6 +510,25 @@ const Collection = () => {
                 <Row className="gx-2 mb-3">
                     <Col md={3}>
                         <Form.Group>
+                            <Form.Label className="mb-1 fw-bold">Unit / Branch</Form.Label>
+                            <Form.Select 
+                                id="entry-unit" 
+                                value={selectedBranch} 
+                                onChange={e => {
+                                    setSelectedBranch(e.target.value);
+                                    setEntry({...entry, farmerId: ''}); // Reset farmer when branch changes
+                                }} 
+                                onKeyDown={(e) => handleKeyDown(e, 'entry-date')}
+                            >
+                                <option value="">-- Select Unit --</option>
+                                {branches.map(b => (
+                                    <option key={b.id} value={b.id}>{b.branchName}</option>
+                                ))}
+                            </Form.Select>
+                        </Form.Group>
+                    </Col>
+                    <Col md={3}>
+                        <Form.Group>
                             <Form.Label className="mb-1 fw-bold">Date</Form.Label>
                             <Form.Control id="entry-date" type="date" value={entry.date} onChange={e => setEntry({...entry, date: e.target.value})} onKeyDown={(e) => handleKeyDown(e, 'entry-shift')} />
                         </Form.Group>
@@ -400,12 +541,12 @@ const Collection = () => {
                             </Form.Select>
                         </Form.Group>
                     </Col>
-                    <Col md={7}>
+                    <Col md={4}>
                         <Form.Group>
                             <Form.Label className="mb-1 fw-bold">Farmer</Form.Label>
-                            <Form.Select id="entry-farmer" autoFocus value={entry.farmerId} onChange={e => setEntry({...entry, farmerId: e.target.value})} onKeyDown={(e) => handleKeyDown(e, 'entry-qty')}>
+                            <Form.Select id="entry-farmer" autoFocus value={entry.farmerId} onChange={e => setEntry({...entry, farmerId: e.target.value})} onKeyDown={(e) => handleKeyDown(e, 'entry-qty')} disabled={!selectedBranch && filteredFarmers.length === 0}>
                                 <option value="">Select Farmer</option>
-                                {farmers.map(f => <option key={f.id} value={f.id}>{f.code} - {f.name} ({f.village})</option>)}
+                                {filteredFarmers.map(f => <option key={f.id} value={f.id}>{f.code} - {f.name}</option>)}
                             </Form.Select>
                         </Form.Group>
                     </Col>
@@ -441,6 +582,9 @@ const Collection = () => {
             </Card.Body>
           </Card>
 
+          {/* Shift Summary Display - Bottom (Above Recent) */}
+          {renderSummary()}
+
           <Card className="shadow-sm border-0">
                 <Card.Header className="py-1 bg-secondary text-white d-flex justify-content-between align-items-center">
                     <span className="small fw-bold">Recent Entries (Last 10)</span>
@@ -453,7 +597,9 @@ const Collection = () => {
                                 <tr>
                                     <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Date</th>
                                     <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Shift</th>
-                                    <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Farmer</th>
+                                    <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Unit</th>
+                                    <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Code</th>
+                                    <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Village Name</th>
                                     <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Kg</th>
                                     <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Ltrs</th>
                                     <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Fat</th>
@@ -467,7 +613,9 @@ const Collection = () => {
                                 <tr key={c.id}>
                                     <td>{formatDate(c.date)}</td>
                                     <td>{c.shift ? c.shift[0] : '-'}</td>
-                                    <td>{getFarmerName(c.farmerId)}</td>
+                                    <td>{getUnitName(c.farmerId)}</td>
+                                    <td>{getFarmerCode(c.farmerId)}</td>
+                                    <td>{getFarmerVillage(c.farmerId)}</td>
                                     <td>{c.qtyKg}</td><td>{c.qty}</td><td>{c.fat}</td><td>{c.snf}</td>
                                     <td className="fw-bold">{formatCurrency(c.amount)}</td>
                                     <td>

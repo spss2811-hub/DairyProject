@@ -5,9 +5,11 @@ import api from '../api';
 
 const AccountHeads = () => {
   const [heads, setHeads] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [formData, setFormData] = useState({
     headName: '',
-    type: 'Expense', // Default
+    type: 'Direct Expenses', 
+    category: '', 
     description: ''
   });
   const [editId, setEditId] = useState(null);
@@ -15,6 +17,7 @@ const AccountHeads = () => {
 
   useEffect(() => {
     loadHeads();
+    loadCategories();
   }, []);
 
   const loadHeads = async () => {
@@ -24,6 +27,15 @@ const AccountHeads = () => {
     } catch (err) {
       console.error("Error loading account heads:", err);
       setMessage({ type: 'danger', text: 'Failed to load account heads' });
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const res = await api.get('/account-categories');
+      setCategories(res.data);
+    } catch (err) {
+      console.error("Error loading categories:", err);
     }
   };
 
@@ -47,7 +59,7 @@ const AccountHeads = () => {
         await api.post('/account-heads', formData);
         setMessage({ type: 'success', text: 'Account Head added successfully' });
       }
-      setFormData({ headName: '', type: 'Expense', description: '' });
+      setFormData({ headName: '', type: 'Direct Expenses', category: '', description: '' });
       setEditId(null);
       loadHeads();
     } catch (err) {
@@ -60,6 +72,7 @@ const AccountHeads = () => {
     setFormData({
       headName: item.headName,
       type: item.type,
+      category: item.category || '',
       description: item.description
     });
     setEditId(item.id);
@@ -80,7 +93,7 @@ const AccountHeads = () => {
   };
 
   const handleCancel = () => {
-    setFormData({ headName: '', type: 'Expense', description: '' });
+    setFormData({ headName: '', type: 'Direct Expenses', category: '', description: '' });
     setEditId(null);
   };
 
@@ -94,14 +107,15 @@ const AccountHeads = () => {
         </Alert>
       )}
 
-      <Row>
-        <Col md={4}>
-          <Card className="shadow-sm mb-4">
-            <Card.Header className="bg-light fw-bold">
-              {editId ? 'Edit Account Head' : 'Add New Account Head'}
-            </Card.Header>
-            <Card.Body>
-              <Form onSubmit={handleSubmit}>
+      {/* Form Section on Top */}
+      <Card className="shadow-sm mb-4">
+        <Card.Header className="bg-light fw-bold">
+          {editId ? 'Edit Account Head' : 'Add New Account Head'}
+        </Card.Header>
+        <Card.Body>
+          <Form onSubmit={handleSubmit}>
+            <Row>
+              <Col md={3}>
                 <Form.Group className="mb-3">
                   <Form.Label>Head Name <span className="text-danger">*</span></Form.Label>
                   <Form.Control
@@ -109,13 +123,14 @@ const AccountHeads = () => {
                     name="headName"
                     value={formData.headName}
                     onChange={handleChange}
-                    placeholder="e.g. Salaries, Electricity Bill"
+                    placeholder="e.g. Salaries"
                     required
                   />
                 </Form.Group>
-
+              </Col>
+              <Col md={3}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Type</Form.Label>
+                  <Form.Label>Account Group</Form.Label>
                   <Form.Select
                     name="type"
                     value={formData.type}
@@ -133,151 +148,167 @@ const AccountHeads = () => {
                     <option value="Loans (Liability)">Loans (Liability)</option>
                     <option value="Current Liabilities">Current Liabilities</option>
                     <option value="Duties & Taxes">Duties & Taxes</option>
-                    <option value="Provisions">Provisions</option>
+                    <option value="Payables(provisions)">Payables(provisions)</option>
                     <option value="Sundry Debtors">Sundry Debtors</option>
                     <option value="Sundry Creditors">Sundry Creditors</option>
                     <option value="Suspense A/c">Suspense A/c</option>
                     <option value="Contra Entry">Contra Entry</option>
                   </Form.Select>
                 </Form.Group>
-
+              </Col>
+              <Col md={3}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Category</Form.Label>
+                  <Form.Select
+                    name="category"
+                    value={formData.category}
+                    onChange={handleChange}
+                  >
+                    <option value="">-- Select Category --</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md={3}>
                 <Form.Group className="mb-3">
                   <Form.Label>Description</Form.Label>
                   <Form.Control
-                    as="textarea"
-                    rows={3}
+                    type="text"
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
                     placeholder="Optional description"
                   />
                 </Form.Group>
+              </Col>
+            </Row>
+            <div className="d-flex justify-content-end gap-2 mt-2">
+              <Button variant="primary" type="submit">
+                <FaSave className="me-2" />
+                {editId ? 'Update' : 'Save'}
+              </Button>
+              {editId && (
+                <Button variant="secondary" onClick={handleCancel}>
+                  <FaTimes className="me-2" /> Cancel
+                </Button>
+              )}
+            </div>
+          </Form>
+        </Card.Body>
+      </Card>
 
-                <div className="d-grid gap-2">
-                  <Button variant="primary" type="submit">
-                    <FaSave className="me-2" />
-                    {editId ? 'Update' : 'Save'}
-                  </Button>
-                  {editId && (
-                    <Button variant="secondary" onClick={handleCancel}>
-                      <FaTimes className="me-2" /> Cancel
-                    </Button>
-                  )}
-                </div>
-              </Form>
-            </Card.Body>
-          </Card>
-        </Col>
+      {/* Table Section at Bottom */}
+      <Card className="shadow-sm">
+        <Card.Header className="bg-light fw-bold d-flex justify-content-between align-items-center">
+          <span>Existing Account Heads</span>
+          <span className="badge bg-primary">{heads.length} Total</span>
+        </Card.Header>
+        <Card.Body>
+          <div className="table-responsive" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+            <Table hover bordered striped size="sm">
+              <thead className="table-dark sticky-top">
+                <tr>
+                  <th>#</th>
+                  <th>Head Name</th>
+                  <th>Account Group</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th className="text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {heads.length > 0 ? (
+                  ['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Payables(provisions)', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].map(type => {
+                    const typeHeads = heads
+                      .filter(h => h.type === type)
+                      .sort((a, b) => (a.headName || '').localeCompare(b.headName || ''));
+                    
+                    if (typeHeads.length === 0) return null;
 
-        <Col md={8}>
-          <Card className="shadow-sm">
-            <Card.Header className="bg-light fw-bold">
-              Existing Account Heads
-            </Card.Header>
-            <Card.Body>
-              <div className="table-responsive">
-                <Table hover bordered striped size="sm">
-                  <thead className="table-dark">
-                    <tr>
-                      <th>#</th>
-                      <th>Head Name</th>
-                      <th>Type</th>
-                      <th>Description</th>
-                      <th className="text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {heads.length > 0 ? (
-                      // Group and Sort
-                      ['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Provisions', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].map(type => {
-                        const typeHeads = heads
-                          .filter(h => h.type === type)
-                          .sort((a, b) => (a.headName || '').localeCompare(b.headName || ''));
-                        
-                        if (typeHeads.length === 0) return null;
-
-                        return (
-                          <React.Fragment key={type}>
-                            <tr className="table-secondary">
-                              <td colSpan="5" className="fw-bold text-uppercase small">{type}s</td>
-                            </tr>
-                            {typeHeads.map((item, index) => (
-                              <tr key={item.id}>
-                                <td>{index + 1}</td>
-                                <td className="fw-bold">{item.headName || '-'}</td>
-                                <td>
-                                  <span className={`badge ${
-                                    item.type === 'Income' ? 'bg-success' : 
-                                    item.type === 'Expense' ? 'bg-danger' : 
-                                    item.type === 'Contra Entry' ? 'bg-info' :
-                                    'bg-secondary'
-                                  }`}>
-                                    {item.type}
-                                  </span>
-                                </td>
-                                <td>{item.description}</td>
-                                <td className="text-center">
-                                  <Button 
-                                    variant="outline-primary" 
-                                    size="sm" 
-                                    className="me-2"
-                                    onClick={() => handleEdit(item)}
-                                    title="Edit"
-                                  >
-                                    <FaEdit />
-                                  </Button>
-                                  <Button 
-                                    variant="outline-danger" 
-                                    size="sm" 
-                                    onClick={() => handleDelete(item.id)}
-                                    title="Delete"
-                                  >
-                                    <FaTrash />
-                                  </Button>
-                                </td>
-                              </tr>
-                            ))}
-                          </React.Fragment>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan="5" className="text-center text-muted py-4">
-                          No account heads found. Add one to get started.
-                        </td>
-                      </tr>
-                    )}
-                    {/* Display any types not in the standard list */}
-                    {heads.length > 0 && heads.filter(h => !['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Provisions', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].includes(h.type)).length > 0 && (
-                        <>
-                            <tr className="table-secondary">
-                                <td colSpan="5" className="fw-bold text-uppercase small">Others</td>
-                            </tr>
-                            {heads
-                                .filter(h => !['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Provisions', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].includes(h.type))
-                                .sort((a, b) => (a.headName || '').localeCompare(b.headName || ''))
-                                .map((item, index) => (
-                                    <tr key={item.id}>
-                                        <td>{index + 1}</td>
-                                        <td className="fw-bold">{item.headName || '-'}</td>
-                                        <td><span className="badge bg-secondary">{item.type}</span></td>
-                                        <td>{item.description}</td>
-                                        <td className="text-center">
-                                            <Button variant="outline-primary" size="sm" className="me-2" onClick={() => handleEdit(item)}><FaEdit /></Button>
-                                            <Button variant="outline-danger" size="sm" onClick={() => handleDelete(item.id)}><FaTrash /></Button>
-                                        </td>
-                                    </tr>
-                                ))
-                            }
-                        </>
-                    )}
-                  </tbody>
-                </Table>
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+                    return (
+                      <React.Fragment key={type}>
+                        <tr className="table-secondary">
+                          <td colSpan="6" className="fw-bold text-uppercase small">{type}s</td>
+                        </tr>
+                        {typeHeads.map((item, index) => (
+                          <tr key={item.id}>
+                            <td>{index + 1}</td>
+                            <td className="fw-bold">{item.headName || '-'}</td>
+                            <td>
+                              <span className={`badge ${
+                                item.type && item.type.includes('Income') ? 'bg-success' : 
+                                item.type && item.type.includes('Expense') ? 'bg-danger' : 
+                                item.type === 'Contra Entry' ? 'bg-info' :
+                                'bg-secondary'
+                              }`}>
+                                {item.type}
+                              </span>
+                            </td>
+                            <td>{item.category || '-'}</td>
+                            <td>{item.description}</td>
+                            <td className="text-center">
+                              <Button 
+                                variant="outline-primary" 
+                                size="sm" 
+                                className="me-2"
+                                onClick={() => handleEdit(item)}
+                                title="Edit"
+                              >
+                                <FaEdit />
+                              </Button>
+                              <Button 
+                                variant="outline-danger" 
+                                size="sm" 
+                                onClick={() => handleDelete(item.id)}
+                                title="Delete"
+                              >
+                                <FaTrash />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="text-center text-muted py-4">
+                      No account heads found.
+                    </td>
+                  </tr>
+                )}
+                {/* Others */}
+                {heads.length > 0 && heads.filter(h => !['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Payables(provisions)', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].includes(h.type)).length > 0 && (
+                    <>
+                        <tr className="table-secondary">
+                            <td colSpan="6" className="fw-bold text-uppercase small">Others</td>
+                        </tr>
+                        {heads
+                            .filter(h => !['Direct Income', 'Indirect Income', 'Direct Expenses', 'Indirect Expenses', 'Fixed Assets', 'Current Assets', 'Bank Accounts', 'Cash-in-hand', 'Capital Account', 'Loans (Liability)', 'Current Liabilities', 'Duties & Taxes', 'Payables(provisions)', 'Sundry Debtors', 'Sundry Creditors', 'Suspense A/c', 'Contra Entry'].includes(h.type))
+                            .sort((a, b) => (a.headName || '').localeCompare(b.headName || ''))
+                            .map((item, index) => (
+                                <tr key={item.id}>
+                                    <td>{index + 1}</td>
+                                    <td className="fw-bold">{item.headName || '-'}</td>
+                                    <td><span className="badge bg-secondary">{item.type}</span></td>
+                                    <td>{item.category || '-'}</td>
+                                    <td>{item.description}</td>
+                                    <td className="text-center">
+                                        <Button variant="outline-primary" size="sm" className="me-2" onClick={() => handleEdit(item)}><FaEdit /></Button>
+                                        <Button variant="outline-danger" size="sm" onClick={() => handleDelete(item.id)}><FaTrash /></Button>
+                                    </td>
+                                </tr>
+                            ))
+                        }
+                    </>
+                )}
+              </tbody>
+            </Table>
+          </div>
+        </Card.Body>
+      </Card>
     </div>
   );
 };

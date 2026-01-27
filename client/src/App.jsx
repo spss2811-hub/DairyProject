@@ -15,6 +15,7 @@ import Branches from './pages/Branches';
 import MilkPurchaseReport from './pages/MilkPurchaseReport';
 import CollectionList from './pages/CollectionList';
 import AdditionsDeductionsList from './pages/AdditionsDeductionsList';
+import AddDeductCategory from './pages/AddDeductCategory';
 import MilkRouteList from './pages/MilkRouteList';
 import CommonRateList from './pages/CommonRateList';
 import BillPeriodList from './pages/BillPeriodList';
@@ -45,6 +46,12 @@ import MilkReconciliationList from './pages/MilkReconciliationList';
 import MilkClosingBalance from './pages/MilkClosingBalance';
 import MilkClosingBalanceList from './pages/MilkClosingBalanceList';
 import AccountHeads from './pages/AccountHeads';
+import AccountCategories from './pages/AccountCategories';
+import MisDailySummary from './pages/MisDailySummary';
+import MisMonthlySummary from './pages/MisMonthlySummary';
+import FinancialBudget from './pages/FinancialBudget';
+import FinancialBudgetList from './pages/FinancialBudgetList';
+import ProcurementProjection from './pages/ProcurementProjection';
 import OpeningBalances from './pages/OpeningBalances';
 import Banks from './pages/Banks';
 import BankList from './pages/BankList';
@@ -73,6 +80,7 @@ function App() {
             <Route path="/branches" element={<Branches />} />
             <Route path="/additions-deductions" element={<AdditionsDeductions />} />
             <Route path="/additions-deductions-list" element={<AdditionsDeductionsList />} />
+            <Route path="/add-deduct-category" element={<AddDeductCategory />} />
             <Route path="/rate-config" element={<RateConfig />} />
             <Route path="/common-rate-list" element={<CommonRateList />} />
             <Route path="/bill-periods" element={<BillPeriods />} />
@@ -101,6 +109,12 @@ function App() {
             <Route path="/milk-closing-balance" element={<MilkClosingBalance />} />
             <Route path="/milk-closing-balance-list" element={<MilkClosingBalanceList />} />
             <Route path="/account-heads" element={<AccountHeads />} />
+            <Route path="/account-categories" element={<AccountCategories />} />
+            <Route path="/mis-daily-summary" element={<MisDailySummary />} />
+            <Route path="/mis-monthly-summary" element={<MisMonthlySummary />} />
+            <Route path="/financial-budget" element={<FinancialBudget />} />
+            <Route path="/financial-budget-list" element={<FinancialBudgetList />} />
+            <Route path="/procurement-projection" element={<ProcurementProjection />} />
             <Route path="/opening-balances" element={<OpeningBalances />} />
             <Route path="/banks" element={<Banks />} />
             <Route path="/bank-list" element={<BankList />} />

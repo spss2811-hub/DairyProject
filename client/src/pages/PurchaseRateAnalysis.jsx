@@ -192,6 +192,7 @@ const PurchaseRateAnalysis = () => {
                             <tr>
                                 <th style={{width: '20%'}}>Unit / Branch</th>
                                 <th style={{width: '20%'}}>Rate Category</th>
+                                <th style={{width: '10%'}}>Target Rate</th>
                                 <th style={{width: '12%'}}>No. of Farmers</th>
                                 <th style={{width: '15%'}}>Qnty Kgs</th>
                                 <th style={{width: '18%'}}>Milk Value</th>
@@ -209,6 +210,7 @@ const PurchaseRateAnalysis = () => {
                                                 </td>
                                             )}
                                             <td>{cat.category}</td>
+                                            <td className="text-center">{analysisData.targetRate.toFixed(2)}</td>
                                             <td className="text-center">{cat.count > 0 ? cat.count : '-'}</td>
                                             <td className="text-end-print">{cat.milk > 0 ? cat.milk.toFixed(2) : '-'}</td>
                                             <td className="text-end-print">{cat.amount > 0 ? formatCurrency(cat.amount) : '-'}</td>
@@ -216,7 +218,7 @@ const PurchaseRateAnalysis = () => {
                                         </tr>
                                     ))}
                                     <tr className="table-info fw-bold">
-                                        <td className="text-end">UNIT TOTAL</td>
+                                        <td className="text-end" colSpan="2">UNIT TOTAL</td>
                                         <td className="text-center">{block.totals.count}</td>
                                         <td className="text-end-print">{block.totals.milk.toFixed(2)}</td>
                                         <td className="text-end-print">{formatCurrency(block.totals.amount)}</td>
@@ -225,7 +227,7 @@ const PurchaseRateAnalysis = () => {
                                 </React.Fragment>
                             ))}
                             <tr className="table-dark text-white fw-bold">
-                                <td colSpan="2" className="text-center">GRAND TOTAL (ALL UNITS)</td>
+                                <td colSpan="3" className="text-center">GRAND TOTAL (ALL UNITS)</td>
                                 <td className="text-center">{gTotals.count}</td>
                                 <td className="text-end-print">{gTotals.milk.toFixed(2)}</td>
                                 <td className="text-end-print">{formatCurrency(gTotals.amount)}</td>

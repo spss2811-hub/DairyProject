@@ -9,8 +9,11 @@ const CollectionList = () => {
   const [collections, setCollections] = useState([]);
   const [farmers, setFarmers] = useState([]);
   const [billPeriods, setBillPeriods] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
+  const [filterShift, setFilterShift] = useState('All');
+  const [filterUnit, setFilterUnit] = useState('All');
   
   const [showRecalcModal, setShowRecalcModal] = useState(false);
   const [recalcFrom, setRecalcFrom] = useState('');
@@ -30,10 +33,11 @@ const CollectionList = () => {
 
   const loadData = async () => {
     try {
-      const [cRes, fRes, bRes] = await Promise.all([
+      const [cRes, fRes, bRes, brRes] = await Promise.all([
         api.get('/collections'),
         api.get('/farmers'),
-        api.get('/bill-periods')
+        api.get('/bill-periods'),
+        api.get('/branches')
       ]);
       
       const sorted = (cRes.data || []).sort((a, b) => {
@@ -45,6 +49,7 @@ const CollectionList = () => {
       setCollections(sorted);
       setFarmers(fRes.data);
       setBillPeriods(bRes.data);
+      setBranches(brRes.data);
     } catch (err) {
       console.error("Failed to load collection list data", err);
     }
@@ -97,16 +102,57 @@ const CollectionList = () => {
     }
   };
 
+  const getFarmerNameOnly = (id) => {
+      const f = farmers.find(farm => farm.id === id);
+      return f ? f.name : id;
+  };
+
   const getFarmerName = (id) => {
       const f = farmers.find(farm => farm.id === id);
       return f ? `${f.code} - ${f.name}` : id;
   };
 
+  const getFarmerCode = (id) => {
+      const f = farmers.find(farm => farm.id === id);
+      return f ? f.code : '-';
+  };
+
+  const getFarmerVillage = (id) => {
+      const f = farmers.find(farm => farm.id === id);
+      return f ? f.village : '-';
+  };
+
+  const getUnitName = (farmerId) => {
+      const f = farmers.find(farm => farm.id === farmerId);
+      if (!f || !f.branchId) return '-';
+      const b = branches.find(branch => String(branch.id) === String(f.branchId));
+      return b ? (b.shortName || b.branchName) : '-';
+  };
+
+  const getUnitId = (farmerId) => {
+      const f = farmers.find(farm => farm.id === farmerId);
+      return f ? String(f.branchId) : '';
+  };
+
   const filteredCollections = collections.filter(c => {
     const matchesSearch = getFarmerName(c.farmerId).toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDate = filterDate ? c.date === filterDate : true;
-    return matchesSearch && matchesDate;
+    const matchesShift = filterShift === 'All' ? true : c.shift === filterShift;
+    const matchesUnit = filterUnit === 'All' ? true : getUnitId(c.farmerId) === filterUnit;
+    
+    return matchesSearch && matchesDate && matchesShift && matchesUnit;
   });
+
+  const summary = filteredCollections.reduce((acc, c) => {
+      acc.count += 1;
+      acc.qtyKg += parseFloat(c.qtyKg) || 0;
+      acc.kgFat += parseFloat(c.kgFat) || 0;
+      acc.kgSnf += parseFloat(c.kgSnf) || 0;
+      return acc;
+  }, { count: 0, qtyKg: 0, kgFat: 0, kgSnf: 0 });
+
+  const avgFat = summary.qtyKg > 0 ? (summary.kgFat / summary.qtyKg) * 100 : 0;
+  const avgSnf = summary.qtyKg > 0 ? (summary.kgSnf / summary.qtyKg) * 100 : 0;
 
   return (
     <div>
@@ -121,11 +167,23 @@ const CollectionList = () => {
 
       <Card className="mb-4 shadow-sm">
           <Card.Body>
-              <Row className="gx-2">
-                  <Col md={4}>
+              <Row className="gx-2 align-items-end">
+                  <Col md={2}>
+                      <Form.Label className="small mb-1">Unit</Form.Label>
+                      <Form.Select 
+                        value={filterUnit}
+                        onChange={e => setFilterUnit(e.target.value)}
+                      >
+                          <option value="All">All Units</option>
+                          {branches.map(b => (
+                              <option key={b.id} value={b.id}>{b.branchName}</option>
+                          ))}
+                      </Form.Select>
+                  </Col>
+                  <Col md={3}>
                       <Form.Label className="small mb-1">Search Farmer</Form.Label>
                       <Form.Control 
-                        placeholder="Search by Farmer Name or Code..." 
+                        placeholder="Search Name or Code..." 
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                       />
@@ -138,22 +196,55 @@ const CollectionList = () => {
                         onChange={e => setFilterDate(e.target.value)}
                       />
                   </Col>
-                  <Col md={2} className="d-flex align-items-end">
-                      <Button variant="outline-secondary" onClick={() => { setSearchTerm(''); setFilterDate(''); }}>Clear</Button>
+                  <Col md={2}>
+                      <Form.Label className="small mb-1">Filter Shift</Form.Label>
+                      <Form.Select 
+                        value={filterShift}
+                        onChange={e => setFilterShift(e.target.value)}
+                      >
+                          <option value="All">All Shifts</option>
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                      </Form.Select>
+                  </Col>
+                  <Col md={2} className="d-flex">
+                      <Button variant="outline-secondary" className="w-100" onClick={() => { setSearchTerm(''); setFilterDate(''); setFilterShift('All'); setFilterUnit('All'); }}>Clear Filters</Button>
                   </Col>
               </Row>
           </Card.Body>
       </Card>
 
+      {/* Summary Row */}
+      <Card className="mb-3 shadow-sm border-0 bg-info bg-opacity-10">
+          <Card.Body className="py-2">
+              <div className="d-flex flex-wrap gap-3 small align-items-center justify-content-center">
+                  <span><strong>{summary.count}</strong> Entries</span>
+                  <span className="text-secondary">|</span>
+                  <span><strong>{summary.qtyKg.toFixed(2)}</strong> Kg Qty</span>
+                  <span className="text-secondary">|</span>
+                  <span><strong>{summary.kgFat.toFixed(3)}</strong> Kg Fat</span>
+                  <span className="text-secondary">|</span>
+                  <span><strong>{summary.kgSnf.toFixed(3)}</strong> Kg SNF</span>
+                  <span className="text-secondary">|</span>
+                  <span><strong>{avgFat.toFixed(2)}</strong> Avg Fat%</span>
+                  <span className="text-secondary">|</span>
+                  <span><strong>{avgSnf.toFixed(2)}</strong> Avg SNF%</span>
+              </div>
+          </Card.Body>
+      </Card>
+
       <Card className="shadow-sm">
           <Card.Body className="p-0">
-            <div style={{ maxHeight: '70vh', overflow: 'auto', position: 'relative' }}>
+            <div style={{ maxHeight: '70vh', overflowX: 'scroll', overflowY: 'auto', position: 'relative' }}>
                 <Table striped bordered hover size="sm" className="mb-0" style={{fontSize: '0.9rem', borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%', whiteSpace: 'nowrap'}}>
                     <thead className="bg-light">
                     <tr>
                         <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Bill Period</th>
                         <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Date</th>
                         <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Shift</th>
+                        <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Unit</th>
+                        <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Code</th>
+                        <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Village Name</th>
                         <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Farmer</th>
                         <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Kg</th>
                         <th style={{position: 'sticky', top: 0, zIndex: 1}} className="bg-light">Liters</th>
@@ -178,7 +269,10 @@ const CollectionList = () => {
                         <td>{getBillPeriodName(c.date, billPeriods)}</td>
                         <td>{formatDate(c.date)}</td>
                         <td>{c.shift ? c.shift[0] : '-'}</td>
-                        <td className="text-nowrap">{getFarmerName(c.farmerId)}</td>
+                        <td>{getUnitName(c.farmerId)}</td>
+                        <td>{getFarmerCode(c.farmerId)}</td>
+                        <td>{getFarmerVillage(c.farmerId)}</td>
+                        <td className="text-nowrap">{getFarmerNameOnly(c.farmerId)}</td>
                         <td>{c.qtyKg}</td>
                         <td>{c.qty}</td>
                         <td>{c.fat}</td>
@@ -205,7 +299,7 @@ const CollectionList = () => {
                         </td>
                         </tr>
                     )) : (
-                        <tr><td colSpan="11" className="text-center py-4 text-muted">No collections found</td></tr>
+                        <tr><td colSpan="22" className="text-center py-4 text-muted">No collections found</td></tr>
                     )}
                     </tbody>
                 </Table>

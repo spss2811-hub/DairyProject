@@ -101,7 +101,24 @@ const MilkRoutes = () => {
                     ref={branchRef}
                     className="mb-3"
                     value={formData.branchId} 
-                    onChange={e => setFormData({...formData, branchId: e.target.value})}
+                    onChange={e => {
+                        const newBranchId = e.target.value;
+                        let newCode = formData.routeCode;
+
+                        if (!editId && newBranchId) {
+                            const branchRoutes = routes.filter(r => String(r.branchId) === String(newBranchId));
+                            if (branchRoutes.length > 0) {
+                                const maxCode = branchRoutes.reduce((max, r) => {
+                                    const codeNum = parseInt(r.routeCode, 10);
+                                    return !isNaN(codeNum) && codeNum > max ? codeNum : max;
+                                }, 0);
+                                newCode = (maxCode + 1).toString();
+                            } else {
+                                newCode = '1';
+                            }
+                        }
+                        setFormData({...formData, branchId: newBranchId, routeCode: newCode});
+                    }}
                     onKeyDown={(e) => handleKeyDown(e, 'r-code')}
                 >
                     <option value="">Select Branch</option>

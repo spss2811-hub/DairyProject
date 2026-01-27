@@ -6,12 +6,23 @@ import api from '../api';
 
 const MilkClosingBalanceList = () => {
   const [list, setList] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
     loadData();
+    loadBranches();
   }, []);
+
+  const loadBranches = async () => {
+    try {
+        const res = await api.get('/branches');
+        setBranches(res.data);
+    } catch (err) {
+        console.error("Error loading branches:", err);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -29,8 +40,27 @@ const MilkClosingBalanceList = () => {
     }
   };
 
+  const getBranchName = (item) => {
+      const branch = branches.find(b => String(b.id) === String(item.branchId));
+      return branch ? branch.branchName : item.branchName || 'Unknown';
+  };
+
+  const getFatKg = (item) => {
+      if (item.kgFat && item.kgFat !== 'NaN') return item.kgFat;
+      const qty = parseFloat(item.qty) || 0;
+      const fat = parseFloat(item.fat) || 0;
+      return (qty * fat / 100).toFixed(2);
+  };
+
+  const getSnfKg = (item) => {
+      if (item.kgSnf && item.kgSnf !== 'NaN') return item.kgSnf;
+      const qty = parseFloat(item.qty) || 0;
+      const snf = parseFloat(item.snf) || 0;
+      return (qty * snf / 100).toFixed(2);
+  };
+
   const filteredList = list.filter(item => 
-    (item.branchName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (getBranchName(item) || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (item.date || '').includes(searchTerm)
   ).sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -78,12 +108,12 @@ const MilkClosingBalanceList = () => {
                           <tr key={item.id}>
                               <td>{item.date}</td>
                               <td>{item.shift || 'AM'}</td>
-                              <td className="fw-bold">{item.branchName}</td>
+                              <td className="fw-bold">{getBranchName(item)}</td>
                               <td className="text-end fw-bold">{item.qty}</td>
                               <td className="text-center">{item.fat}</td>
                               <td className="text-center">{item.snf}</td>
-                              <td className="text-end">{item.kgFat}</td>
-                              <td className="text-end">{item.kgSnf}</td>
+                              <td className="text-end">{getFatKg(item)}</td>
+                              <td className="text-end">{getSnfKg(item)}</td>
                               <td>
                                   <Button variant="link" size="sm" onClick={() => navigate('/milk-closing-balance', { state: { editEntry: item } })}>
                                       <FaEdit />
